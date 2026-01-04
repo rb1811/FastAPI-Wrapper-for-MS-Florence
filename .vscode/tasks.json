@@ -1,0 +1,12 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Florence Base Image",
+            "type": "shell",
+            "command": "docker build -f Dockerfile.base -t florence-base:latest .",
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}
