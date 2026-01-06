@@ -1,2 +1,7 @@
 __pycache__
 *.pyc
+hf_cache
+.chainlit
+.files
+chainlit.db
+.env

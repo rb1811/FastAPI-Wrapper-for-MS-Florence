@@ -1,16 +1,24 @@
-# This is the heavy foundation
-FROM python:3.10-slim
+# 1. Use 3.11-slim as discussed
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system libraries
+# 2. Install system libraries + tools for secure downloads
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     gcc \
+    curl \
+    tar \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the massive Torch CPU package
-# We use a high timeout to prevent the network errors you saw earlier
+# 3. Install Infisical CLI using the robust setup script
+# This script handles architecture detection and retries automatically
+RUN curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
+    apt-get update && apt-get install -y infisical && \
+    rm -rf /var/lib/apt/lists/*
+
+# 4. Install Torch (CPU version)
 RUN pip install --no-cache-dir --default-timeout=1000 \
     torch --index-url https://download.pytorch.org/whl/cpu

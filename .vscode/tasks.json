@@ -2,11 +2,37 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build Florence Base Image",
+            "label": "Florence: Build Florence Base Image",
             "type": "shell",
             "command": "docker build -f Dockerfile.base -t florence-base:latest .",
             "group": "build",
             "problemMatcher": []
+        },
+        {
+            "label": "Florence: Total Reset (Compose Down + Cleanup)",
+            "type": "shell",
+            "command": "docker compose down --remove-orphans && docker container prune -f && docker image prune -f",
+            "detail": "Stops infra, removes orphaned containers and dangling images. Leaves network intact.",
+            "problemMatcher": [],
+            "presentation": {
+                "clear": true,
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "dependsOn": []
+        },
+        {
+            "label": "Florence: Start Chainlit",
+            "type": "shell",
+            "command": "chainlit run chainlit_app.py --host 0.0.0.0 --port 8010",
+            "detail": "Start chainlit",
+            "problemMatcher": [],
+            "presentation": {
+                "clear": true,
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "dependsOn": []
         }
     ]
 }

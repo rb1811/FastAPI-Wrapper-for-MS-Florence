@@ -6,15 +6,15 @@ WORKDIR /app
 # 1. Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# 2. Copy and install requirements using uv
-# --system tells uv to install into the global site-packages (required for Docker)
+# 2. Install Python requirements
 COPY requirements.txt .
+# We add the index-strategy flag here to handle the multiple indexes in your requirements.txt
 RUN uv pip install --system --no-cache \
     --index-strategy unsafe-best-match \
     -r requirements.txt
 
-# Copy your app code
+# 3. Copy app code and entrypoint
 COPY . .
+RUN chmod +x entrypoint.sh 
 
-# Start Chainlit
-CMD ["chainlit", "run", "chainlit_app.py", "--host", "0.0.0.0", "--port", "8010"]
+ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]

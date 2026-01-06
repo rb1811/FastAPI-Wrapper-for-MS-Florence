@@ -1,0 +1,13 @@
+how to install git lfs and clone Florence LLM. Clean up unecessary files to save spave
+
+sudo apt-get update
+sudo apt-get install git-lfs
+git lfs install
+cd ~/Documents/FastAPI-MS-Florence
+mkdir -p hf_cache
+git clone https://huggingface.co/microsoft/Florence-2-large hf_cache/florence-2-large
+cd hf_cache/
+cd florence-2-large/
+rm pytorch_model.bin
+rm -rf .git
+rm sample_inference.ipynb README.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md LICENSE .gitattributes

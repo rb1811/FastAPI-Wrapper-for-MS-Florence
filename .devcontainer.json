@@ -1,0 +1,23 @@
+{
+    "name": "Florence-ai",
+    "dockerComposeFile": ["docker-compose.yaml"],
+    "service": "florence-ai",
+    "workspaceFolder": "/app",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-azuretools.vscode-docker",
+                "vscode-icons-team.vscode-icons",
+                "KevinRose.vsc-python-indent",
+                "alefragnani.Bookmarks",
+                "magicstack.MagicPython",
+                "ms-python.debugpy",
+                "awesomektvn.scratchpad",
+                "PKief.material-icon-theme"
+            ]
+        }
+    },
+    "remoteUser": "root"
+}

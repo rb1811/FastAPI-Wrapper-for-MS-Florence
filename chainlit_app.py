@@ -1,10 +1,16 @@
+import os
+import io
 import chainlit as cl
 from app.model import Florence2Model
-from app.config import ModelConfig
+from app.config import ModelConfig, S3StorageClient
 from logging_config import get_logger
-import io
 from PIL import Image
 from app.utils import draw_polygons, plot_bbox, draw_ocr_bboxes, fig_to_pil
+from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
+
 
 # --- CRITICAL FIX FOR LOOKUPERROR ---
 from chainlit.context import local_steps
@@ -39,6 +45,51 @@ TASK_DESCRIPTIONS = {
 
 TASK_TYPES = list(TASK_DESCRIPTIONS.keys())
 
+
+# 1. Setup the Storage Client  This replaces the default local file storage
+# Use a global flag to prevent redundant initialization attempts
+_db_initialized = False
+
+async def init_db(db_url):
+    """Ensures the required Chainlit tables exist by executing commands individually."""
+    global _db_initialized
+    if _db_initialized:
+        return
+    
+    # List of individual SQL commands
+    commands = [
+        """CREATE TABLE IF NOT EXISTS users ("id" UUID PRIMARY KEY, "identifier" TEXT NOT NULL UNIQUE, "metadata" JSONB NOT NULL, "createdAt" TEXT);""",
+        """CREATE TABLE IF NOT EXISTS threads ("id" UUID PRIMARY KEY, "createdAt" TEXT, "name" TEXT, "userId" UUID, "userIdentifier" TEXT, "tags" TEXT[], "metadata" JSONB, FOREIGN KEY ("userId") REFERENCES users("id") ON DELETE CASCADE);""",
+        """CREATE TABLE IF NOT EXISTS steps ( "id" UUID PRIMARY KEY, "name" TEXT NOT NULL, "type" TEXT NOT NULL, "threadId" UUID NOT NULL, "parentId" UUID, "streaming" BOOLEAN NOT NULL, "waitForResult" BOOLEAN, "isError" BOOLEAN, "metadata" JSONB, "input" TEXT, "output" TEXT, "createdAt" TEXT, "start" TEXT, "end" TEXT, "generation" JSONB, "showInput" TEXT, "language" TEXT, "indent" INTEGER, "waitForAnswer" BOOLEAN DEFAULT FALSE, "defaultOpen" BOOLEAN DEFAULT FALSE, FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE );""",
+        """CREATE TABLE IF NOT EXISTS elements ("id" UUID PRIMARY KEY, "threadId" UUID, "type" TEXT, "url" TEXT, "chainlitKey" TEXT, "name" TEXT NOT NULL, "display" TEXT, "objectKey" TEXT, "size" TEXT, "page" INTEGER, "language" TEXT, "forId" UUID, "mime" TEXT, "metadata" JSONB, FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE);""",
+        """CREATE TABLE IF NOT EXISTS feedbacks ("id" UUID PRIMARY KEY, "forId" UUID NOT NULL, "threadId" UUID NOT NULL, "value" INTEGER NOT NULL, "comment" TEXT);"""
+    ]
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.begin() as conn:
+            for cmd in commands:
+                await conn.execute(text(cmd))
+        _db_initialized = True
+        logger.info("✅ Database schema verified/initialized.")
+    except Exception as e:
+        logger.error(f"❌ DB Init Failed: {e}")
+    finally:
+        await engine.dispose()
+
+storage_client = S3StorageClient()
+
+@cl.data_layer
+def get_data_layer():
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        # Run initialization. Since this is called once on startup, 
+        # it ensures the schema is ready for the first message.
+        asyncio.run(init_db(database_url))
+        return SQLAlchemyDataLayer(conninfo=database_url, storage_provider=storage_client)
+    return None
+
+
 async def send_task_menu():
     fix_context()
     actions = [
@@ -53,6 +104,10 @@ async def send_task_menu():
 
 @cl.on_chat_start
 async def start():
+    thread_id = cl.context.session.thread_id
+    logger.info(f"New session started. Thread ID: {thread_id}")
+    
+    cl.user_session.set("storage_client", storage_client)
     await send_task_menu()
 
 @cl.action_callback("select_task")
