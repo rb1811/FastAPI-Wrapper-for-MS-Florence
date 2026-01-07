@@ -16,3 +16,7 @@ boto3
 sqlalchemy
 greenlet
 asyncpg
+structlog
+logfire
+logfire[fastapi]
+opentelemetry-instrumentation-celery
