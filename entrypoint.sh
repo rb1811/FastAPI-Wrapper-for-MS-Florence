@@ -1,13 +1,10 @@
 #!/bin/sh
 set -e
 
-# Define the stable internal address for Infisical
 INFISICAL_INTERNAL_URL="http://infra-infisical:8080"
-
 echo "🔍 Connecting to Infisical at $INFISICAL_INTERNAL_URL..."
 
-# 1. Authenticate using Machine Identity
-# These variables should be passed into the container via docker-compose from your .env
+# 1. Authenticate
 export INFISICAL_TOKEN=$(infisical login --method=universal-auth \
     --client-id="$INFISICAL_MACHINE_ID" \
     --client-secret="$INFISICAL_MACHINE_SECRET" \
@@ -15,7 +12,7 @@ export INFISICAL_TOKEN=$(infisical login --method=universal-auth \
     --plain --silent)
 
 if [ -z "$INFISICAL_TOKEN" ]; then
-    echo "❌ Error: Failed to authenticate with Infisical. Check your Client ID and Secret."
+    echo "❌ Error: Failed to authenticate with Infisical."
     exit 1
 fi
 
@@ -25,22 +22,24 @@ echo "🔐 Identity verified. Initializing Database and starting Florence-2..."
 
 # 2. Fetch and Save to a temporary file
 echo "🔓 Fetching secrets from Infisical..."
-# We save to /tmp/infisical_vars so it survives as long as the container is up
 infisical export --env "dev" --path "/florence" --projectId "$INFISICAL_PROJECT_ID" --domain "$INFISICAL_INTERNAL_URL" --format dotenv-export > /tmp/infisical_vars
 
-# 3. Load them into the current script session
+# 3. Load variables
 . /tmp/infisical_vars
 
-# 4. Standard If/Else Logic
+# 4. Execution Logic
 if [ "$DEV_MODE" = "true" ]; then
-    echo "🛠️ DEV_MODE is ACTIVE."
-    echo "👉 To see variables in this terminal, run: . /tmp/infisical_vars"
-    
-    # Optional: Automatically load for every new bash terminal
+    echo "🛠️ DEV_MODE is ACTIVE. Manual start required."
+    echo "👉 Run: . /tmp/infisical_vars && uvicorn main:app --reload --port 8000"
     echo ". /tmp/infisical_vars" >> ~/.bashrc
-    
     tail -f /dev/null
 else
-    echo "🚀 Starting Chainlit server..."
-    exec chainlit run chainlit_app.py --host 0.0.0.0 --port 8010
+    echo "🚀 Starting Production Servers..."
+    
+    # Start Chainlit in the background
+    chainlit run chainlit_app.py --host 0.0.0.0 --port 8010 &
+    
+    # Start FastAPI as the foreground process (replaces shell via exec)
+    # This becomes PID 1
+    exec uvicorn fastapi_main:app --host 0.0.0.0 --port 8000
 fi

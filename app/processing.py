@@ -14,6 +14,7 @@ from app.constants import (
     REGION_TO_SEGMENTATION,
     OCR_WITH_REGION
 )
+from app.config import S3StorageClient
 
 logger = get_logger(__name__)
 
@@ -22,52 +23,95 @@ def image_to_bytes(image):
     image.save(buf, format='PNG')
     return buf.getvalue()
 
+
+async def run_inference_and_visualize(model, task_type, text_input, image_bytes, return_path=False, request_id=None):
+    """
+    Core logic: Takes task, input, and image bytes. 
+    Returns the raw result and a list of processed image data (bytes or MinIO URLs).
+    """
+    logger.info("Running inference core", task=task_type, return_path=return_path)
+    
+    # 1. Load Image
+    original_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    
+    # 2. Inference call
+    result = model.run_example(task_type, text_input, image_bytes)
+    
+    # 3. Visualization Logic
+    visualized_images = []
+    det_tasks = [OD, OBJECT_DETECTION, DENSE_REGION_CAPTION, REGION_PROPOSAL, CAPTION_TO_PHRASE_GROUNDING, OPEN_VOCABULARY_DETECTION]
+    
+    processed_image = None
+    if task_type in det_tasks:
+        fig = plot_bbox(original_image, result[task_type])
+        processed_image = fig_to_pil(fig)
+    elif task_type in [REFERRING_EXPRESSION_SEGMENTATION, REGION_TO_SEGMENTATION]:
+        processed_image = original_image.copy()
+        draw_polygons(processed_image, result[task_type], fill_mask=True)
+    elif task_type == OCR_WITH_REGION:
+        processed_image = original_image.copy()
+        draw_ocr_bboxes(processed_image, result[task_type])
+
+    # 4. Handle Return Format (Bytes vs. MinIO Path)
+    if processed_image:
+        img_bytes = image_to_bytes(processed_image)
+        
+        if return_path:
+            # Initialize S3 client and upload
+            s3_client = S3StorageClient()
+            upload_result = await s3_client.upload_file(
+                data=img_bytes, 
+                mime="image/png", 
+                object_key=f"result_{task_type}.png",
+                threadId=request_id
+            )
+            visualized_images.append(upload_result["url"])
+        else:
+            visualized_images.append(img_bytes)
+
+    return result, visualized_images
+
+
 async def process_image_workflow(model, text_input, task_menu_callback):
-    """Handles the model inference and result visualization."""
+    """
+    Chainlit-specific wrapper. Handles session state and UI updates.
+    """
     task_type = cl.user_session.get("task_type")
     image_element = cl.user_session.get("image")
     
-    logger.info("Processing workflow initiated", task=task_type, has_text_input=bool(text_input))
+    logger.info("Chainlit workflow initiated", task=task_type)
     status_msg = cl.Message(content=f"Processing {task_type}...")
     await status_msg.send()
 
     try:
+        # 1. Read file from disk (Chainlit specific)
         with open(image_element.path, 'rb') as f:
             image_data = f.read()
         
-        original_image = Image.open(image_element.path).convert("RGB")
+        # 2. FIX: Added 'await' here because the core logic is now async
+        result, image_outputs = await run_inference_and_visualize(
+            model=model, 
+            task_type=task_type, 
+            text_input=text_input, 
+            image_bytes=image_data,
+            return_path=False  # Chainlit usually wants bytes for immediate display
+        )
         
-        # Inference call using the model instance passed from the app
-        result = model.run_example(task_type, text_input, image_data)
-        
-        elements = []
-        det_tasks = [OD, OBJECT_DETECTION, DENSE_REGION_CAPTION, REGION_PROPOSAL, CAPTION_TO_PHRASE_GROUNDING, OPEN_VOCABULARY_DETECTION]
-        
-        if task_type in det_tasks:
-            logger.debug("Visualizing detection results", task=task_type)
-            fig = plot_bbox(original_image, result[task_type])
-            elements.append(cl.Image(content=image_to_bytes(fig_to_pil(fig)), name="result", display="inline"))
-        elif task_type in [REFERRING_EXPRESSION_SEGMENTATION, REGION_TO_SEGMENTATION]:
-            logger.debug("Visualizing segmentation results", task=task_type)
-            output_image = original_image.copy()
-            draw_polygons(output_image, result[task_type], fill_mask=True)
-            elements.append(cl.Image(content=image_to_bytes(output_image), name="result", display="inline"))
-        elif task_type == OCR_WITH_REGION:
-            logger.debug("Visualizing OCR results", task=task_type)
-            output_image = original_image.copy()
-            draw_ocr_bboxes(output_image, result[task_type])
-            elements.append(cl.Image(content=image_to_bytes(output_image), name="result", display="inline"))
+        # 3. Format result for Chainlit
+        # image_outputs will be a list of bytes because return_path=False
+        elements = [
+            cl.Image(content=img_bytes, name="result", display="inline") 
+            for img_bytes in image_outputs
+        ]
 
         await cl.Message(content=f"**Result for {task_type}:**\n{result}", elements=elements).send()
-        logger.info("Processing workflow completed successfully ✅", task=task_type)
+        logger.info("Chainlit workflow completed ✅", task=task_type)
         
     except Exception as e:
-        logger.exception("Error in processing workflow", task=task_type, error=str(e))
+        logger.exception("Error in Chainlit workflow", task=task_type, error=str(e))
         await cl.Message(content=f"Error: {str(e)}").send()
     finally:
-        # Reset session state for next interaction
         cl.user_session.set("task_type", None)
         cl.user_session.set("image", None)
         await status_msg.remove()
-        # Trigger the menu callback passed from the main app
         await task_menu_callback()
