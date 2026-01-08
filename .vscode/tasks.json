@@ -33,6 +33,19 @@
                 "reveal": "always"
             },
             "dependsOn": []
+        },
+        {
+            "label": "Florence: Start FastAPI",
+            "type": "shell",
+            "command": "uvicorn fastapi_main:app --host 0.0.0.0 --port 8000",
+            "detail": "Start fastapi",
+            "problemMatcher": [],
+            "presentation": {
+                "clear": true,
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "dependsOn": []
         }
     ]
 }
