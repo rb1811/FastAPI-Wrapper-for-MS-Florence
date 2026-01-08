@@ -13,27 +13,40 @@ logger = get_logger(__name__)
 colormap = ['blue', 'orange', 'green', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan', 'red',
             'lime', 'indigo', 'violet', 'aqua', 'magenta', 'coral', 'gold', 'tan', 'skyblue']
 
+# app/utils.py
+
 def plot_bbox(image, data):
+    # Florence-2 uses different keys for different tasks:
+    # <OD> / <OBJECT_DETECTION> usually use 'labels'
+    # <OPEN_VOCABULARY_DETECTION> often uses 'bboxes_labels'
+    bboxes = data.get('bboxes', [])
+    labels = data.get('labels') or data.get('bboxes_labels') or []
+
     logger.info("Generating Bounding Box plot", 
-                num_boxes=len(data.get('bboxes', [])),
-                labels=data.get('labels', []))
+                num_boxes=len(bboxes),
+                labels=labels)
     
     fig, ax = plt.subplots()
     ax.imshow(image)
     
     try:
-        for bbox, label in zip(data['bboxes'], data['labels']):
+        # If labels is empty, we create generic labels so zip doesn't fail
+        if not labels and bboxes:
+            labels = [f"obj_{i}" for i in range(len(bboxes))]
+
+        for bbox, label in zip(bboxes, labels):
             x1, y1, x2, y2 = bbox
             rect = patches.Rectangle((x1, y1), x2-x1, y2-y1, linewidth=2, edgecolor='r', facecolor='none')
             ax.add_patch(rect)
             plt.text(x1, y1-5, label, color='white', fontsize=10, bbox=dict(facecolor='red', alpha=0.8))
-    except TypeError as e:
-        logger.error("TypeError in plot_bbox", error=str(e), data_received=str(data))
+            
+    except Exception as e:
+        logger.error("Error in plot_bbox drawing loop", error=str(e), data_received=str(data))
 
     ax.axis('off')
     plt.tight_layout()
-    plt.close(fig)
     return fig
+
 
 def draw_polygons(image, prediction, fill_mask=False):
     draw = ImageDraw.Draw(image)

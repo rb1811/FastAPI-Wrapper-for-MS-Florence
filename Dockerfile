@@ -1,14 +1,13 @@
-# Use the local base image
+# Use your updated local base image
 FROM florence-base:latest
 
 WORKDIR /app
 
-# 1. Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# 2. Install Python requirements
+# 1. Copy requirements (uv is already in /bin/ from the base image)
 COPY requirements.txt .
-# We add the index-strategy flag here to handle the multiple indexes in your requirements.txt
+
+# 2. Install requirements using uv
+# We use --system because we are inside a dedicated container
 RUN uv pip install --system --no-cache \
     --index-strategy unsafe-best-match \
     -r requirements.txt

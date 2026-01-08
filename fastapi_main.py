@@ -5,6 +5,7 @@ import logfire
 from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
+from api import api_router
 
 from app.logging_config import get_logger, setup_logging, LOGFIRE_ENABLED
 from app.config import ModelConfig
@@ -49,12 +50,4 @@ app.add_middleware(StructlogMiddleware)
 if LOGFIRE_ENABLED:
     logfire.instrument_fastapi(app)
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "pid": os.getpid()}
-
-# Example endpoint for Florence inference
-@app.post("/predict")
-async def predict(data: dict):
-    logger.info("Prediction request received", task=data.get("task"))
-    return {"message": "Inference endpoint ready"}
+app.include_router(api_router)

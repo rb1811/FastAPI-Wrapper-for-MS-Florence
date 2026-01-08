@@ -89,6 +89,7 @@ class S3StorageClient(BaseStorageClient):
         public_base = os.getenv('S3_PUBLIC_URL', 'http://localhost:9091')
         return {"url": f"{public_base}/{self.bucket}/{clean_key}"}
     
+
     async def delete_file(self, filename: str):
         logger.info("Deleting file from S3", key=filename)
         try:
@@ -97,7 +98,49 @@ class S3StorageClient(BaseStorageClient):
         except Exception as e:
             logger.error("Failed to delete file", key=filename, error=str(e))
 
+
     async def get_read_url(self, filename: str):
         url = f"{os.getenv('S3_ENDPOINT_URL')}/{self.bucket}/{filename}"
         logger.debug("Generated read URL", key=filename, url=url)
         return url
+    
+    def generate_presigned_url(self, object_key: str, expiration: int = 604800):
+        """
+        Generates a temporary GET URL for a private S3 object.
+        :param object_key: The full path to the file (e.g., 'florence/abc/result.png')
+        :param expiration: Time in seconds until the link expires
+        """
+        try:
+            # Note: We use the internal client but it must return a URL 
+            # reachable by your browser (localhost)
+            url = self.client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': self.bucket,
+                    'Key': object_key
+                },
+                ExpiresIn=expiration
+            )
+            
+            # Fix: If your internal S3_ENDPOINT_URL uses 'infra-minio', 
+            # we must swap it for 'localhost' so your browser can find it.
+            public_base = os.getenv('S3_PUBLIC_URL', 'http://localhost:9091')
+            if "infra-minio" in url:
+                url = url.replace("http://infra-minio:9091", public_base)
+                
+            return url
+        except Exception as e:
+            logger.error("Failed to generate presigned URL", error=str(e))
+            return None
+
+    def file_exists(self, object_key: str) -> bool:
+        """Checks if an object exists in the S3 bucket."""
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=object_key)
+            return True
+        except self.client.exceptions.ClientError as e:
+            # 404 means it doesn't exist; other codes mean different issues
+            if e.response['Error']['Code'] == "404":
+                return False
+            logger.error("Error checking file existence", key=object_key, error=str(e))
+            raise e

@@ -5,3 +5,4 @@ hf_cache
 .files
 chainlit.db
 .env
+.vscode/github-accounts.json
