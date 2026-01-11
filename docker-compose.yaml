@@ -25,5 +25,8 @@ networks:
   florence-net:
     name: florence-net
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24  # Forces this specific safe range
   infra-storage:
     external: true

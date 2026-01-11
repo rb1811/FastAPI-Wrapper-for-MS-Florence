@@ -11,9 +11,9 @@ Before running this project, ensure you have the core infrastructure running. Th
 3. Logfire: For structured logging and monitoring. Create a free [Logfire](https://pydantic.dev/logfire) account and select the free plan. The [free plan](https://pydantic.dev/pricing) is very generous for localhost project. They give 10M span AKA logs. If you have ever used Grafana or Humio, you will find almost all the developer needful features in here
 
 
-`[!IMPORTANT]` For detailed instructions on setting up Infisical and MinIO, please refer to the [Infisical-Minio](https://github.com/rb1811/infra-monitoring) project. You will need to obtain your Machine Identity credentials there.
+<mark>[!IMPORTANT]</mark> For detailed instructions on setting up Infisical and MinIO, please refer to the [Infisical-Minio](https://github.com/rb1811/infra-monitoring) project. You will need to obtain your Machine Identity credentials there.
 
-`[!IMPORTANT]` Create a project in Logfire, generate a write token and copy it to `.env` in `LOGFIRE_TOKEN`
+<mark>[!IMPORTANT]</mark> Create a project in Logfire, generate a write token and copy it to `.env` in `LOGFIRE_TOKEN`
 
 ## 📥 Local Model Preparation
 
@@ -59,7 +59,6 @@ INFISICAL_MACHINE_ID=your_machine_id
 INFISICAL_MACHINE_SECRET=your_machine_secret
 
 # --- OBSERVABILITY ---
-# Create an free account at https://logfire.pydantic.dev/ and select the free plan
 # Set DEV_MODE=true to disable Logfire during local testing
 LOGFIRE_TOKEN=your_logfire_write_token
 DEV_MODE=false

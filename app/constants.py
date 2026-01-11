@@ -4,7 +4,6 @@ from typing import Literal, List, Final
 CAPTION: Final[str] = "<CAPTION>"
 DETAILED_CAPTION: Final[str] = "<DETAILED_CAPTION>"
 MORE_DETAILED_CAPTION: Final[str] = "<MORE_DETAILED_CAPTION>"
-OBJECT_DETECTION: Final[str] = "<OBJECT_DETECTION>"
 OD: Final[str] = "<OD>"
 OCR: Final[str] = "<OCR>"
 OCR_WITH_REGION: Final[str] = "<OCR_WITH_REGION>"
@@ -22,7 +21,6 @@ TASK_TYPES: Final[List[str]] = [
     CAPTION,
     DETAILED_CAPTION,
     MORE_DETAILED_CAPTION,
-    OBJECT_DETECTION,
     OD,
     OCR,
     OCR_WITH_REGION,

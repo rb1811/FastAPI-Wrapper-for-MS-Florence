@@ -8,7 +8,6 @@ from app.constants import (
     REFERRING_EXPRESSION_SEGMENTATION,
     OPEN_VOCABULARY_DETECTION,
     OD,
-    OBJECT_DETECTION,
     DENSE_REGION_CAPTION,
     REGION_PROPOSAL,
     REGION_TO_SEGMENTATION,
@@ -37,9 +36,15 @@ async def run_inference_and_visualize(model, task_type, text_input, image_bytes,
     # 2. Inference call
     result = model.run_example(task_type, text_input, image_bytes)
     
+    # 2. ADD THE DEBUG LINE HERE
+    logger.debug("DEBUGGING MODEL OUTPUT", 
+                 task=task_type, 
+                 result_type=str(type(result)), 
+                 content=result)
+    
     # 3. Visualization Logic
     visualized_images = []
-    det_tasks = [OD, OBJECT_DETECTION, DENSE_REGION_CAPTION, REGION_PROPOSAL, CAPTION_TO_PHRASE_GROUNDING, OPEN_VOCABULARY_DETECTION]
+    det_tasks = [OD, DENSE_REGION_CAPTION, REGION_PROPOSAL, CAPTION_TO_PHRASE_GROUNDING, OPEN_VOCABULARY_DETECTION]
     
     processed_image = None
     if task_type in det_tasks:

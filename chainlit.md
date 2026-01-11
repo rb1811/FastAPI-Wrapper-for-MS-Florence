@@ -5,7 +5,6 @@
 | `<CAPTION>` | Generates a simple caption for the image. |
 | `<DETAILED_CAPTION>` | Provides a detailed description of the image. |
 | `<MORE_DETAILED_CAPTION>` | Generates a very comprehensive description. |
-| `<OBJECT_DETECTION>` | Detects and locates objects within the image. |
 | `<OD>` | Short for Object Detection; locates main objects. |
 | `<OCR>` | Performs Optical Character Recognition. |
 | `<OCR_WITH_REGION>` | OCR on specific regions with locations. |

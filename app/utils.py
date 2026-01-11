@@ -13,11 +13,10 @@ logger = get_logger(__name__)
 colormap = ['blue', 'orange', 'green', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan', 'red',
             'lime', 'indigo', 'violet', 'aqua', 'magenta', 'coral', 'gold', 'tan', 'skyblue']
 
-# app/utils.py
 
 def plot_bbox(image, data):
     # Florence-2 uses different keys for different tasks:
-    # <OD> / <OBJECT_DETECTION> usually use 'labels'
+    # <OD> usually use 'labels'
     # <OPEN_VOCABULARY_DETECTION> often uses 'bboxes_labels'
     bboxes = data.get('bboxes', [])
     labels = data.get('labels') or data.get('bboxes_labels') or []
