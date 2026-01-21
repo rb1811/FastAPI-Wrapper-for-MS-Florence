@@ -12,8 +12,15 @@ RUN uv pip install --system --no-cache \
     --index-strategy unsafe-best-match \
     -r requirements.txt
 
-# 3. Copy app code and entrypoint
+# 3. Copy the heavy model
+COPY hf_cache/florence-2-large /app/hf_cache/florence-2-large
+    
+# 4. Copy app code and entrypoint
 COPY . .
+
+# Ensure the environment variable points to this internal path
+ENV MODEL_ID="/app/hf_cache/florence-2-large"
+
 RUN chmod +x entrypoint.sh 
 
 ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]

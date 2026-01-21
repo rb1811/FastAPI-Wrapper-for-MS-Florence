@@ -1,7 +1,7 @@
 import structlog
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
-
+import base64
 from app.logging_config import get_logger, setup_logging
 from app.constants import TASK_TYPES
 from app.config import S3StorageClient, ModelConfig
@@ -18,83 +18,71 @@ model = Florence2Model(ModelConfig())
 
 florence_router = APIRouter(tags=["Run Florence LLM"])
 
+
+"""
+store_image Flag determines whether API should store the images in Blob storage and return the path to the file 
+or should return the image bytes 
+"""
 @florence_router.post("/predict")
 async def predict(
     task: str = Form(...),
     text_input: Optional[str] = Form(None),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    store_image: bool = Form(True)
 ):
-    # A. Fetch the request_id from the middleware's context
-    request_id = structlog.contextvars.get_contextvars().get("request_id")
-    start_time = time.perf_counter()
-    
-    logger.info("prediction_start", task=task, filename=file.filename, content_type=file.content_type)
-    
-    if text_input and (text_input.strip() == "" or text_input.lower() == "string"):
-        text_input = None
-
-    if task not in TASK_TYPES:
-        raise HTTPException(status_code=400, detail=f"Invalid task. Must be one of {TASK_TYPES}")
-
     try:
-        # B. Read input image bytes
+        request_id = structlog.contextvars.get_contextvars().get("request_id")
         image_bytes = await file.read()
-        file_size_kb = len(image_bytes) / 1024
-        logger.info("image_read_complete", size_kb=round(file_size_kb, 2))
-
-        # C. MANUALLY STORE INPUT IMAGE
-        # Passing threadId=request_id ensures it uses the ID from middleware for the S3 path
-        input_upload = await storage_client.upload_file(
-            data=image_bytes,
-            mime=file.content_type or "image/png",
-            object_key=file.filename,
-            threadId=request_id 
-        )
-        logger.info("Input image stored in S3", url=input_upload["url"])
         
-        inference_start = time.perf_counter()
-        logger.info("inference_engine_start", task=task)
+        input_representation = None
+        
+        # 1. HANDLE INPUT IMAGE
+        if store_image:
+            # Match the keys expected by S3StorageClient.upload_file (**kwargs)
+            input_upload = await storage_client.upload_file(
+                data=image_bytes,           # Use 'data', not 'file_bytes'
+                mime=file.content_type,     # Use 'mime', not 'mime_type'
+                object_key=file.filename,
+                threadId=request_id         
+            )
+            # Get Presigned URL using the URL returned by the upload
+            input_key = input_upload["url"].split(f"{storage_client.bucket}/")[-1]
+            input_representation = storage_client.generate_presigned_url(input_key)
+        else:
+            # Convert to Base64 (This part was correct)
+            b64_input = base64.b64encode(image_bytes).decode('utf-8')
+            input_representation = f"data:{file.content_type};base64,{b64_input}"
 
-        # D. RUN INFERENCE & STORE RESULT
-        # Setting return_path=True tells the core logic to upload the result to S3
-        # We need to ensure run_inference_and_visualize passes the request_id down
-        result, output_urls = await run_inference_and_visualize(
+        # 2. RUN INFERENCE (Passing store_image to core logic)
+        result, output_data = await run_inference_and_visualize(
             model=model,
             task_type=task,
             text_input=text_input,
             image_bytes=image_bytes,
-            return_path=True,
-            request_id=request_id # Pass this to ensure result is in same folder
+            return_path=store_image, # Maps to the S3 logic in processing.py
+            request_id=request_id 
         )
-        
-        inference_duration = time.perf_counter() - inference_start
-        logger.info("inference_engine_complete", duration=round(inference_duration, 3), outputs_generated=len(output_urls))
 
-        final_output_urls = []
-        for url in output_urls:
-            # Extract key: everything after 'florence-uploads/'
-            s3_key = url.split(f"{storage_client.bucket}/")[-1]
-            presigned = storage_client.generate_presigned_url(s3_key)
-            final_output_urls.append(presigned)
+        # 3. HANDLE OUTPUT IMAGES
+        final_outputs = []
+        for item in output_data:
+            if store_image:
+                # item is an S3 URL, refresh it to be presigned
+                s3_key = item.split(f"{storage_client.bucket}/")[-1].split('?')[0]
+                final_outputs.append(storage_client.generate_presigned_url(s3_key))
+            else:
+                # item is raw bytes, convert to Base64
+                b64_output = base64.b64encode(item).decode('utf-8')
+                final_outputs.append(f"data:image/png;base64,{b64_output}")
 
-
-        # Do the same for the input image
-        input_key = input_upload["url"].split(f"{storage_client.bucket}/")[-1]
-        input_presigned = storage_client.generate_presigned_url(input_key)
-        
-        total_duration = time.perf_counter() - start_time
-        logger.info("prediction_request_success", 
-                    total_duration=round(total_duration, 3),
-                    request_id=request_id)
-        
         return {
             "request_id": request_id,
             "task": task,
-            "input_image_url": input_presigned,
+            "store_image_enabled": store_image,
+            "input_image": input_representation,
             "result_data": result,
-            "output_visualized_urls": final_output_urls
+            "output_visualized": final_outputs 
         }
-
     except Exception as e:
         logger.exception("Inference endpoint failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

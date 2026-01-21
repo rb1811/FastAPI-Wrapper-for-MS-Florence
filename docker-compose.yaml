@@ -5,6 +5,8 @@ services:
     build:
       context: .
       network: host
+      args:
+        - DEVICE=${ACCELERATOR:-cpu}
     container_name: florence_ai
     image: florence_ai
     networks:
@@ -16,10 +18,10 @@ services:
       - "${FASTAPI_PORT}:8000"
     volumes:
       - .:/app
-      # Change this line to map your local download into the container
-      - ./hf_cache:/app/hf_cache 
     restart: unless-stopped
     entrypoint: ["./entrypoint.sh"]
+    devices:
+      - ${AMD_GPU_DEVICE:-/dev/null}:${AMD_GPU_DEVICE:-/dev/null}
 
 networks: 
   florence-net:

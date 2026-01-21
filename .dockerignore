@@ -1,0 +1,13 @@
+demo
+.gitignore
+Readme.md
+chainlit.md
+Local Florence Installation.md
+.git
+__pycache__
+
+# Need this here so that COPY . .  command in Dockerfile ignore this and we will explicitly copy this folder. This makes builds faster
+# Ignore everything in hf_cache by default
+hf_cache/*
+# BUT specifically allow this one model folder
+!hf_cache/florence-2-large

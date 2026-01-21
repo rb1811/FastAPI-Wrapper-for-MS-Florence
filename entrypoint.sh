@@ -18,8 +18,6 @@ fi
 
 echo "🔐 Identity verified. Initializing Database and starting Florence-2..."
 
-
-
 # 2. Fetch and Save to a temporary file
 echo "🔓 Fetching secrets from Infisical..."
 infisical export --env "dev" --path "/florence" --projectId "$INFISICAL_PROJECT_ID" --domain "$INFISICAL_INTERNAL_URL" --format dotenv-export > /tmp/infisical_vars

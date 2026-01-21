@@ -1,24 +1,26 @@
 # 1. Start with Python slim
 FROM python:3.11-slim
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Define a Build Argument (default to cpu)
+ARG DEVICE=cpu
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # 3. Install system libraries
 RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglib2.0-0 \
-    gcc \
-    curl \
-    tar \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    libgl1 libglib2.0-0 gcc curl tar ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
-# 4. Install Infisical CLI 
+# 4. Install Infisical
 RUN curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
     apt-get update && apt-get install -y infisical && \
     rm -rf /var/lib/apt/lists/*
 
-# 5. Use UV for Torch (much faster than pip and better timeout handling)
-RUN uv pip install --system --no-cache torch --index-url https://download.pytorch.org/whl/cpu
+# 5. Conditional Torch Installation
+# If DEVICE=rocm, install ROCm version. Otherwise, install CPU version.
+RUN if [ "$DEVICE" = "rocm" ] ; then \
+        uv pip install --system --no-cache torch torchvision --index-url https://download.pytorch.org/whl/rocm6.1; \
+    else \
+        uv pip install --system --no-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+    fi

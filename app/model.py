@@ -23,7 +23,7 @@ def fixed_get_imports(filename: str | os.PathLike) -> list[str]:
 class Florence2Model:
     def __init__(self, config):
         logger.info("Initializing Florence2Model", device="cpu", model_id=config.MODEL_ID)
-        self.device = torch.device("cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         try:
             with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports):

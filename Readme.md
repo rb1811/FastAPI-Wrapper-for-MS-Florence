@@ -8,12 +8,9 @@ Before running this project, ensure you have the core infrastructure running. Th
 
 1. Infisical: For secret management.
 2. MinIO: For storing uploaded and processed images. To eliminate the need to write custom clean up scripts
-3. Logfire: For structured logging and monitoring. Create a free [Logfire](https://pydantic.dev/logfire) account and select the free plan. The [free plan](https://pydantic.dev/pricing) is very generous for localhost project. They give 10M span AKA logs. If you have ever used Grafana or Humio, you will find almost all the developer needful features in here
+3. Logfire: For logging and monitoring
 
-
-<mark>[!IMPORTANT]</mark> For detailed instructions on setting up Infisical and MinIO, please refer to the [Infisical-Minio](https://github.com/rb1811/infra-monitoring) project. You will need to obtain your Machine Identity credentials there.
-
-<mark>[!IMPORTANT]</mark> Create a project in Logfire, generate a write token and copy it to `.env` in `LOGFIRE_TOKEN`
+<mark>[!IMPORTANT]</mark> For detailed instructions on setting up Infisical, MinIO and Logfire, please refer to the [Infisical-Minio](https://github.com/rb1811/infra-monitoring) project. You will need to obtain your Machine Identity credentials there.
 
 ## 📥 Local Model Preparation
 
@@ -25,7 +22,7 @@ To ensure fast startup and offline capability, the Florence-2 model must be down
     ```
 2. Download the model files from HuggingFace. [Click here for Local Florence Installation instructions](./Local%20Florence%20Installation.md)
 
-### Why you need MS Florence locally?
+#### Why you need MS Florence locally?
 **Ans**: It speeds up boot time for the docker container. Else it tries to download the LLM after the chainlit server starts. 
 
 3. Ensure the folder structure looks like this:
@@ -59,14 +56,16 @@ INFISICAL_MACHINE_ID=your_machine_id
 INFISICAL_MACHINE_SECRET=your_machine_secret
 
 # --- OBSERVABILITY ---
-# Set DEV_MODE=true to disable Logfire during local testing
-LOGFIRE_TOKEN=your_logfire_write_token
 DEV_MODE=false
 LOG_LEVEL=DEBUG
 
 # --- MODEL ---
 MODEL_ID=/app/hf_cache/florence-2-large
 SERVICE_NAME=florence-ai
+
+# --- GPU CONFIG ---
+ACCELERATOR=cpu
+AMD_GPU_DEVICE=/dev/dri
 ```
 
 ## 🐳 Docker Build Strategy
@@ -100,15 +99,35 @@ Once the containers are up, you can access the Florence model through two interf
 | _FastAPI_  | `http://localhost:8020`       | Rest API for programmatic inference and /predict endpoints   |
 | _Chainlit_ | `http://localhost:8010`       | User-friendly chat interface for interactive image analysis. |
 
+### 🛰️ API Feature: `store_image` Flag
+
+When using the `/predict` endpoint, you can control whether the API behaves as a persistent storage service or a transient inference engine using the `store_image` boolean flag.
+
+| Flag | Behavior | Response Format |
+| :--- | :--- | :--- |
+| `true` (Default) | **Persistent**: Both input and output images are uploaded to MinIO S3. | Returns **Presigned S3 URLs**. |
+| `false` | **Transient**: No files are stored in S3. Images are processed entirely in memory. | Returns **Base64 Encoded Strings**. |
+
+#### Example Request (Curl)
+```bash
+curl -X 'POST' \
+  'http://localhost:8020/v1/predict' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: multipart/form-data' \
+  -F 'task=<OD>' \
+  -F 'file=@image.jpg' \
+  -F 'store_image=false'
+```
+
 ## Storage Management
 
-All images (input and output) are automatically synced to your MinIO instance. This ensures that your local Docker container remains stateless and images are persisted safely.
+All images (input and output) are automatically synced to your MinIO instance, when using Chainlit. However while using FastAPI, you can control this behavior via `store_image` flag. This ensures that your local Docker container remains stateless and images are persisted safely.
 
 ## 📈 Monitoring & Logging
 
 This project is integrated with Pydantic Logfire.
 
-1. Production Mode (DEV_MODE=false): All logs and traces are sent to your Logfire dashboard. You must provide a valid LOGFIRE_TOKEN in .env.
+1. Production Mode (DEV_MODE=false): All logs and traces are sent to your Logfire dashboard. You must provide a valid LOGFIRE_TOKEN in infisical.
        Chainlit is run as background process and FastAPI is run as a PID 1 process.
 2. Development Mode (DEV_MODE=true): Logfire is disabled, and logs are output to the standard console for easier local debugging.
        Neither Chainlit or FastAPI is run by default. Its left upto the developer to chose which they want to run. Commands are available in enterypoint.sh. Or you can run them using tasks available in .vscode/tasks.json
@@ -126,6 +145,23 @@ Unlike the [original implementation](https://github.com/askaresh/MS-Florence2/tr
 
 - **CPU Support**: By utilizing a `Python 3.11` base image and explicitly configuring the model to use `torch.device("cpu")`, this project can run on any standard PC, laptop, or server without a dedicated GPU.
 - **Portability**: This makes the project ideal for local development, CI/CD pipelines, and cost-effective cloud deployments where expensive GPU instances aren't required.
+
+### Configuring Acceleration (.env)
+You can control the hardware optimization via the `ACCELERATOR` setting. If the variable is absent, it defaults to **CPU mode**.
+
+| `ACCELERATOR` Value | Description | Requirements |
+| :--- | :--- | :--- |
+| `cpu` (Default) | Runs on any standard processor. | None. |
+| `rocm` | Enables AMD GPU acceleration via ROCm. | AMD GPU, `amdgpu` drivers, and mapping `/dev/kfd` in docker. |
+
+### AMD/ROCm Setup
+To enable AMD support, update your `.env`:
+```bash
+ACCELERATOR=rocm
+AMD_GPU_DEVICE=/dev/dri
+```
+
+<mark>Note</mark>: If ACCELERATOR is not set, the build process defaults to a lightweight CPU-only version of PyTorch to save space.
 
 ## Demo Screenshots
 | Output Image | Description | 
