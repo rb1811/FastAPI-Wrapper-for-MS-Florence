@@ -99,6 +99,19 @@ Once the containers are up, you can access the Florence model through two interf
 | _FastAPI_  | `http://localhost:8020`       | Rest API for programmatic inference and /predict endpoints   |
 | _Chainlit_ | `http://localhost:8010`       | User-friendly chat interface for interactive image analysis. |
 
+
+## ⚙️ Service Control (Selective Startup)
+
+You can choose to run the API and the Chat UI together or independently. Control this via your `.env` file:
+
+| Flag | Logic | Result |
+| :--- | :--- | :--- |
+| `DISABLE_FLORENCE_API=true` | If present/non-empty | FastAPI (Port 8000) will **not** start. |
+| `DISABLE_FLORENCE_CHAT=true` | If present/non-empty | Chainlit (Port 8010) will **not** start. |
+
+**Note:** If both are left blank (default), both services start in parallel. If both are set to `true`, the container will exit with an error to prevent wasted resources.
+
+
 ### 🛰️ API Feature: `store_image` Flag
 
 When using the `/predict` endpoint, you can control whether the API behaves as a persistent storage service or a transient inference engine using the `store_image` boolean flag.

@@ -34,10 +34,36 @@ if [ "$DEV_MODE" = "true" ]; then
 else
     echo "🚀 Starting Production Servers..."
     
-    # Start Chainlit in the background
-    chainlit run chainlit_app.py --host 0.0.0.0 --port 8010 &
+    # Check flags (if variable is NOT empty, it's considered "present")
+    SHOULD_START_API=true
+    SHOULD_START_CHAT=true
+
+    if [ -n "$DISABLE_FLORENCE_API" ]; then
+        echo "🚫 API Service is DISABLED via environment flag."
+        SHOULD_START_API=false
+    fi
+
+    if [ -n "$DISABLE_FLORENCE_CHAT" ]; then
+        echo "🚫 Chat Service is DISABLED via environment flag."
+        SHOULD_START_CHAT=false
+    fi
+
+    # Start Services
+    if [ "$SHOULD_START_API" = true ] && [ "$SHOULD_START_CHAT" = true ]; then
+        echo "✅ Starting BOTH API and Chat..."
+        chainlit run chainlit_app.py --port 8010 --host 0.0.0.0 & \
+        uvicorn fastapi_main:app --host 0.0.0.0 --port 8000
     
-    # Start FastAPI as the foreground process (replaces shell via exec)
-    # This becomes PID 1
-    exec uvicorn fastapi_main:app --host 0.0.0.0 --port 8000
+    elif [ "$SHOULD_START_API" = true ]; then
+        echo "✅ Starting API ONLY..."
+        uvicorn fastapi_main:app --host 0.0.0.0 --port 8000
+        
+    elif [ "$SHOULD_START_CHAT" = true ]; then
+        echo "✅ Starting Chat ONLY..."
+        chainlit run chainlit_app.py --port 8010 --host 0.0.0.0
+        
+    else
+        echo "⚠️ ERROR: Both services are disabled. Container has nothing to do."
+        exit 1
+    fi
 fi

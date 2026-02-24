@@ -9,7 +9,7 @@ WORKDIR /app
 
 # 3. Install system libraries
 RUN apt-get update && apt-get install -y \
-    libgl1 libglib2.0-0 gcc curl tar ca-certificates && \
+    libgl1 libglib2.0-0 gcc curl tar ca-certificates procps && \
     rm -rf /var/lib/apt/lists/*
 
 # 4. Install Infisical
