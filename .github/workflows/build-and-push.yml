@@ -1,0 +1,58 @@
+name: Build and Push Florence-2 Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      accelerator_type:
+        description: 'Target hardware (cpu or rocm)'
+        required: true
+        default: 'cpu'
+        type: choice
+        options:
+          - cpu
+          - rocm
+      image_tag:
+        description: 'Tag for the final image'
+        required: true
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: actions/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 1: Build the Base Image
+      - name: Build Florence Base Image
+        run: |
+          docker build -f Dockerfile.base \
+            --build-arg DEVICE=${{ github.event.inputs.accelerator_type }} \
+            -t florence-base:latest .
+
+      # Step 2: Build the Final Application Image
+      # This uses 'FROM florence-base:latest' internally 
+      - name: Build and Push Final Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.accelerator_type }}-latest

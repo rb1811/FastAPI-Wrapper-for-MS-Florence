@@ -186,7 +186,14 @@ AMD_GPU_DEVICE=/dev/dri
 
 ### Checkout [All Florence Tasks Details @](chainlit.md)
 
-
 ## High Level Architecture Diagram
 
 ![High Level Architecture Diagram](./demo/High%20level%20Architecture%20Diagram.png)
+
+
+## 🤖 GitHub Actions
+
+This project includes a manual workflow to build and push images to GHCR.
+1. Go to **Actions** in your GitHub repo.
+2. Select **Build and Push Florence-2 Image**.
+3. Click **Run workflow**, choose your hardware (`cpu` or `rocm`), and click the button.
