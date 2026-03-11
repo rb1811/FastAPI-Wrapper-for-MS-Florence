@@ -20,7 +20,7 @@ RUN curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
 # 5. Conditional Torch Installation
 # If DEVICE=rocm, install ROCm version. Otherwise, install CPU version.
 RUN if [ "$DEVICE" = "rocm" ] ; then \
-        uv pip install --system --no-cache torch torchvision --index-url https://download.pytorch.org/whl/rocm6.1; \
+        uv pip install --system --no-cache torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2; \
     else \
         uv pip install --system --no-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
     fi

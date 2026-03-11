@@ -63,16 +63,41 @@ LOG_LEVEL=DEBUG
 MODEL_ID=/app/hf_cache/florence-2-large
 SERVICE_NAME=florence-ai
 
-# --- GPU CONFIG ---
-ACCELERATOR=cpu
-AMD_GPU_DEVICE=/dev/dri
+# --- GPU RELATED CONFIG ---
+# Note these below configs are populated via the .vscode/tasks -> "Florence: Auto-Detect Hardware Config". These are specifically needed for AMD iGPU
+RENDER_GID=992
+VIDEO_GID=44
+HSA_OVERRIDE_GFX_VERSION=11.0.0
+ROCM_ALLOW_UNSAFE_ASIC=1
+TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 ```
 
 ## 🐳 Docker Build Strategy
 
 This project uses a Two-Stage Docker Build to maximize efficiency. By separating the heavy AI dependencies from the application code, we save time and data during rebuilds.
 
-Step 1: Build the Base Image
+#### Step 1: Pre-requisite: Hardware Permissions (Linux/AMD Only)
+If you plan to use an AMD GPU (ACCELERATOR=rocm), Docker needs the correct Group ID (GID) to access the hardware. Groups like render have different IDs on different Linux distributions (e.g., 992 on one PC, 109 on another).
+
+1. Run the *Auto-Detection Task*, before building, run the VS Code Task to automatically sync your host's GPU permissions to your .env file:
+
+> + Press Ctrl+Shift+P -> Run Task -> Select "Florence: Auto-Detect Hardware Config".
+
+2. Confirm it Worked
+Open your .env file. You should see a line like `RENDER_GID=992`. This ID will now be passed to the container at runtime.
+
+3. Manual Backup (If Task Fails)
+If the task fails or you are not using VS Code, you can manually find and set the ID:
+
+```
+# Find your 'render' group ID
+getent group render | cut -d: -f3
+
+# Add it to your .env manually
+echo "RENDER_GID=your_id_here" >> .env
+```
+
+#### Step 2: Build the Base Image
 This contains all the "heavy" dependencies like PyTorch, Transformers, and CUDA libraries. You have 2 options for this.
 
 1. **Via CLI**: 
@@ -81,7 +106,7 @@ This contains all the "heavy" dependencies like PyTorch, Transformers, and CUDA 
     ```
 2. **Via VS Code** (ctrl+shift+p: Run Task): Run the task "Florence: Build Base Image" from [vscode tasks](./.vscode/tasks.json)
 
-Step 2: Build the Application Image
+#### Step 3: Build the Application Image
 This adds your code on top of the base image.
 
 1. **Via CLI**:

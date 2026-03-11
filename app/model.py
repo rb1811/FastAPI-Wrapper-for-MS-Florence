@@ -22,8 +22,19 @@ def fixed_get_imports(filename: str | os.PathLike) -> list[str]:
 
 class Florence2Model:
     def __init__(self, config):
-        logger.info("Initializing Florence2Model", device="cpu", model_id=config.MODEL_ID)
+        # 1. Determine device first
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # 2. Log the ACTUAL device detected
+        logger.info("Initializing Florence2Model", 
+                    device=str(self.device), 
+                    model_id=config.MODEL_ID,
+                    cuda_available=torch.cuda.is_available())
+
+        if self.device.type == "cuda":
+            logger.info("GPU Hardware Detected", 
+                        name=torch.cuda.get_device_name(0),
+                        vram=f"{torch.cuda.get_device_properties(self.device).total_memory / 1024**2:.0f}MB")
 
         try:
             with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports):
@@ -33,13 +44,14 @@ class Florence2Model:
                     config.MODEL_ID, 
                     trust_remote_code=True
                 )
+                # Ensure we use SDPA for ROCm compatibility
                 model_config.attn_implementation = "sdpa"
 
                 self.model = AutoModelForCausalLM.from_pretrained(
                     config.MODEL_ID, 
                     config=model_config,
                     trust_remote_code=True,
-                    attn_implementation="sdpa"
+                    torch_dtype=torch.float16 if self.device.type == "cuda" else torch.float32 # Use Half precision on GPU
                 ).to(self.device).eval()
                 
                 self.processor = AutoProcessor.from_pretrained(
@@ -72,7 +84,10 @@ class Florence2Model:
                          has_text_input=bool(text_input),
                          img_dims=f"{image.width}x{image.height}")
 
-            inputs = self.processor(text=prompt, images=image, return_tensors="pt").to(self.device)
+            # We determine the correct dtype based on whether we are on GPU or CPU
+            torch_dtype = torch.float16 if self.device.type == "cuda" else torch.float32
+
+            inputs = self.processor(text=prompt, images=image, return_tensors="pt").to(self.device, torch_dtype)
             
             generated_ids = self.model.generate(
                 input_ids=inputs["input_ids"],

@@ -47,7 +47,7 @@ class S3StorageClient(BaseStorageClient):
             )
             logger.info("S3 Client created successfully")
         except Exception as e:
-            logger.exception("Failed to initialize S3 client", error=str(e))
+            logger.exception("Failed to initialize S3 client", error=str(e))    
 
     async def upload_file(self, **kwargs):
         actual_content = kwargs.get("data")

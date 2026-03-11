@@ -4,8 +4,9 @@
         {
             "label": "Florence: Build Florence Base Image",
             "type": "shell",
-            "command": "docker build -f Dockerfile.base -t florence-base:latest .",
+            "command": "export $(grep -v '^#' .env | xargs) && echo \"Building for: ${ACCELERATOR:-cpu}\" && docker build -f Dockerfile.base -t florence-base:latest --build-arg DEVICE=${ACCELERATOR:-cpu} .",
             "group": "build",
+            "detail": "Automatically reads ACCELERATOR from .env and builds the correct base image.",
             "problemMatcher": []
         },
         {
@@ -46,6 +47,13 @@
                 "reveal": "always"
             },
             "dependsOn": []
+        },
+        {
+            "label": "Florence: Auto-Detect Hardware Config",
+            "type": "shell",
+            "command": "RGID=$(getent group render | cut -d: -f3 || echo 992); VGID=$(getent group video | cut -d: -f3 || echo 44); GFX=\"11.0.0\"; for KEY in RENDER_GID VIDEO_GID HSA_OVERRIDE_GFX_VERSION ROCM_ALLOW_UNSAFE_ASIC TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL; do if [ \"$KEY\" = \"RENDER_GID\" ]; then VAL=$RGID; elif [ \"$KEY\" = \"VIDEO_GID\" ]; then VAL=$VGID; elif [ \"$KEY\" = \"HSA_OVERRIDE_GFX_VERSION\" ]; then VAL=$GFX; else VAL=\"1\"; fi; if grep -q \"^$KEY=\" .env; then sed -i \"s/^$KEY=.*/$KEY=$VAL/\" .env; else [ -s .env ] && [ -n \"$(tail -c1 .env)\" ] && echo \"\" >> .env; echo \"$KEY=$VAL\" >> .env; fi; done; echo \"SUCCESS: RENDER=$RGID, VIDEO=$VGID, GFX=$GFX, UNSAFE_ASIC=1, AOTRITON=1\"",
+            "detail": "Detects GIDs and sets ROCm/AOTriton flags for Radeon 860M in .env.",
+            "problemMatcher": []
         }
     ]
 }

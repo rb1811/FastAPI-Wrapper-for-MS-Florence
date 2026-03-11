@@ -6,13 +6,15 @@ services:
       context: .
       network: host
       args:
-        - DEVICE=${ACCELERATOR:-cpu}
+        - DEV_MODE=${DEV_MODE:-false}
     container_name: florence_ai
     image: florence_ai
     networks:
       - florence-net
       - infra-storage
     env_file: .env 
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.0.0}
     ports:
       - "${CHAINLIT_PORT}:8010"
       - "${FASTAPI_PORT}:8000"
@@ -21,7 +23,11 @@ services:
     restart: unless-stopped
     entrypoint: ["./entrypoint.sh"]
     devices:
-      - ${AMD_GPU_DEVICE:-/dev/null}:${AMD_GPU_DEVICE:-/dev/null}
+      - ${AMD_GPU_DEVICE:-/dev/dri}:${AMD_GPU_DEVICE:-/dev/dri}
+      - /dev/kfd:/dev/kfd
+    group_add:
+      - "${RENDER_GID:-44}"
+      - "${VIDEO_GID:-44}"
 
 networks: 
   florence-net:
