@@ -10,7 +10,8 @@ from app.constants import (
 )
 from app.logging_config import get_logger
 from app.processing import process_image_workflow
-from app.database import get_data_layer # Import the new factory
+from app.database import get_data_layer
+from app.redis_model_proxy import RedisModelProxy
 
 from chainlit.context import local_steps
 def fix_context():
@@ -20,7 +21,7 @@ def fix_context():
         local_steps.set([])
 
 logger = get_logger(__name__)
-model = Florence2Model(ModelConfig())
+model = RedisModelProxy()
 storage_client = S3StorageClient()
 
 @cl.data_layer

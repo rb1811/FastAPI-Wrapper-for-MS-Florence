@@ -53,7 +53,7 @@ def setup_logging():
                 structlog.processors.CallsiteParameter.FUNC_NAME,
                 structlog.processors.CallsiteParameter.LINENO,
             ],
-            additional_ignores=["logging", "structlog"],
+            additional_ignores=["logging", "structlog", "app.logging_config"],
         ),
     ])
 

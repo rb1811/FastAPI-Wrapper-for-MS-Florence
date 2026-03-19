@@ -38,8 +38,21 @@
         {
             "label": "Florence: Start FastAPI",
             "type": "shell",
-            "command": "uvicorn fastapi_main:app --host 0.0.0.0 --port 8000",
+            "command": "gunicorn fastapi_main:app --workers $API_WORKER_COUNT --worker-class uvicorn.workers.UvicornWorker --timeout 120 --bind 0.0.0.0:8000",
             "detail": "Start fastapi",
+            "problemMatcher": [],
+            "presentation": {
+                "clear": true,
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "dependsOn": []
+        },
+        {
+            "label": "Florence: Tail model_worker logs",
+            "type": "shell",
+            "command": "tail -f /tmp/model_worker.log",
+            "detail": "Tail model_worker logs",
             "problemMatcher": [],
             "presentation": {
                 "clear": true,

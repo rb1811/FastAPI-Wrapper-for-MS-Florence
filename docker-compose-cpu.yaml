@@ -7,33 +7,30 @@ services:
       network: host
       args:
         - DEV_MODE=${DEV_MODE:-false}
-    container_name: florence_ai
-    image: florence_ai
+    container_name: florence_ai_cpu
+    image: florence_ai:cpu
     networks:
       - florence-net
       - infra-storage
     env_file: .env 
     environment:
-      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.0.0}
-      - API_WORKER_COUNT=${API_WORKER_COUNT:-2}
+      # CPU doesn't need HSA_OVERRIDE; lowered worker count for better stability
+      - API_WORKER_COUNT=${API_WORKER_COUNT:-1}
+      - DEVICE=cpu
     ports:
-      - "${CHAINLIT_PORT}:8010"
-      - "${FASTAPI_PORT}:8000"
+      - "${CHAINLIT_PORT:-8010}:8010"
+      - "${FASTAPI_PORT:-8000}:8000"
     volumes:
       - .:/app
     restart: unless-stopped
     entrypoint: ["./entrypoint.sh"]
-    devices:
-      - ${AMD_GPU_DEVICE:-/dev/dri}:${AMD_GPU_DEVICE:-/dev/dri}
-      - /dev/kfd:/dev/kfd
-    group_add:
-      - "${RENDER_GID:-44}"
-      - "${VIDEO_GID:-44}"
+    # Log rotation to keep the host disk happy
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    # No devices or group_add here, allowing it to boot on standard RAM/CPU systems
 
 networks: 
   florence-net:
@@ -41,6 +38,6 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/24  # Forces this specific safe range
+        - subnet: 172.20.0.0/24 
   infra-storage:
     external: true

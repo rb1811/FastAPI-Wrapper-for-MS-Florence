@@ -12,23 +12,11 @@ Before running this project, ensure you have the core infrastructure running. Th
 
 <mark>[!IMPORTANT]</mark> For detailed instructions on setting up Infisical, MinIO and Logfire, please refer to the [Infisical-Minio](https://github.com/rb1811/infra-monitoring) project. You will need to obtain your Machine Identity credentials there.
 
-## 📥 Local Model Preparation
-
-To ensure fast startup and offline capability, the Florence-2 model must be downloaded locally before building the Docker containers.
-
-1. Create a local folder:
-    ```
-    mkdir -p hf_cache/florence-2-large
-    ```
-2. Download the model files from HuggingFace. [Click here for Local Florence Installation instructions](./Local%20Florence%20Installation.md)
-
-#### Why you need MS Florence locally?
-**Ans**: It speeds up boot time for the docker container. Else it tries to download the LLM after the chainlit server starts. 
-
 3. Ensure the folder structure looks like this:
 ```
 project_root/
 ├── api/
+├── .env/
 ├── app/
 ├── .vscode/
 ├── hf_cache/
@@ -60,11 +48,12 @@ DEV_MODE=false
 LOG_LEVEL=DEBUG
 
 # --- MODEL ---
-MODEL_ID=/app/hf_cache/florence-2-large
 SERVICE_NAME=florence-ai
+API_WORKER_COUNT=2
 
 # --- GPU RELATED CONFIG ---
-# Note these below configs are populated via the .vscode/tasks -> "Florence: Auto-Detect Hardware Config". These are specifically needed for AMD iGPU
+ACCELERATOR=rocm
+AMD_GPU_DEVICE=/dev/dri
 RENDER_GID=992
 VIDEO_GID=44
 HSA_OVERRIDE_GFX_VERSION=11.0.0
@@ -72,33 +61,61 @@ ROCM_ALLOW_UNSAFE_ASIC=1
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 ```
 
-## 🐳 Docker Build Strategy
+## 🐳 How to start the project?
 
+#### Step 1: 📥 Local Model Preparation
+
+To ensure fast startup and offline capability, the Florence-2 model must be downloaded locally before building the Docker containers. It avoid downloading the model (1.6Gbs) everytime, you start the container services.
+
+1. Create a local folder:
+    ```
+    mkdir -p hf_cache/florence-2-large
+    ```
+2. Download the model files from HuggingFace. [Click here for Local Florence Installation instructions](./Local%20Florence%20Installation.md)
+
+#### 🛠️ Step 2: Hardware Acceleration & GPU Permissions (Linux/AMD Only)
+
+By default, the project runs in CPU Mode. If you wish to run the model entirely on system RAM, skip this step and move directly to Step 3. If you have an AMD GPU, you can enable ROCm acceleration. This requires mapping your host's hardware group IDs (GID) and setting specific flags so the container can talk to the GPU.
+
+*1. Auto-Detect Hardware Config (Recommended)*
+If using VS Code, we provide an automated task to detect your hardware IDs and inject the necessary ROCm optimization flags directly into your .env:
+
+1. Press Ctrl+Shift+P -> Tasks: Run Task.
+2. Select Florence: Auto-Detect Hardware Config.
+3.  Verify: Open your .env. It will now contain the GIDs and GFX overrides specific to your machine.
+
+*2. Understanding the GPU Parameters*
+
+Whether using the Auto-Detect task or setting up manually, here is what these parameters do:
+
+| Parameter | Value/Example | Description |
+| :--- | :--- | :--- |
+| ACCELERATOR | rocm | Enables AMD GPU acceleration logic in the code. |
+| AMD_GPU_DEVICE | /dev/dri | The path to the GPU render nodes on your host. |
+| RENDER_GID | 992 | Your host's 'render' group ID. Grants Docker permission to use the GPU.. |
+| VIDEO_GID | 44 | Your host's 'video' group ID. Required for hardware video/image decoding. |
+| HSA_OVERRIDE_GFX_VERSION | 11.0.0 | Forces ROCm to treat newer/integrated GPUs (like Radeon 780M/860M) as supported hardware. |
+| ROCM_ALLOW_UNSAFE_ASIC | 1 | Allows ROCm to initialize on hardware not officially on the enterprise support list. |
+| TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL | 1 | Enables a faster Triton-based backend for PyTorch on AMD hardware. |
+
+*3. Manual GPU Setup (If Task Fails)*
+If you aren't using VS Code, run these commands to find your IDs and add them to `.env`:
+```
+# Find your host IDs
+RGID=$(getent group render | cut -d: -f3)
+VGID=$(getent group video | cut -d: -f3)
+
+# Add to .env
+echo "ACCELERATOR=rocm" >> .env
+echo "RENDER_GID=$RGID" >> .env
+echo "VIDEO_GID=$VGID" >> .env
+echo "HSA_OVERRIDE_GFX_VERSION=11.0.0" >> .env
+```
+
+#### Step 3: Build the Base Image
 This project uses a Two-Stage Docker Build to maximize efficiency. By separating the heavy AI dependencies from the application code, we save time and data during rebuilds.
 
-#### Step 1: Pre-requisite: Hardware Permissions (Linux/AMD Only)
-If you plan to use an AMD GPU (ACCELERATOR=rocm), Docker needs the correct Group ID (GID) to access the hardware. Groups like render have different IDs on different Linux distributions (e.g., 992 on one PC, 109 on another).
-
-1. Run the *Auto-Detection Task*, before building, run the VS Code Task to automatically sync your host's GPU permissions to your .env file:
-
-> + Press Ctrl+Shift+P -> Run Task -> Select "Florence: Auto-Detect Hardware Config".
-
-2. Confirm it Worked
-Open your .env file. You should see a line like `RENDER_GID=992`. This ID will now be passed to the container at runtime.
-
-3. Manual Backup (If Task Fails)
-If the task fails or you are not using VS Code, you can manually find and set the ID:
-
-```
-# Find your 'render' group ID
-getent group render | cut -d: -f3
-
-# Add it to your .env manually
-echo "RENDER_GID=your_id_here" >> .env
-```
-
-#### Step 2: Build the Base Image
-This contains all the "heavy" dependencies like PyTorch, Transformers, and CUDA libraries. You have 2 options for this.
+Dockerfile.base contains all the "heavy" dependencies like PyTorch, Transformers, and CUDA libraries. You have 2 options for this.
 
 1. **Via CLI**: 
     ```
@@ -106,14 +123,26 @@ This contains all the "heavy" dependencies like PyTorch, Transformers, and CUDA 
     ```
 2. **Via VS Code** (ctrl+shift+p: Run Task): Run the task "Florence: Build Base Image" from [vscode tasks](./.vscode/tasks.json)
 
-#### Step 3: Build the Application Image
-This adds your code on top of the base image.
+#### Step 4: Build & Launch the Application
+This step adds your application code on top of the base image. Since this project supports both hardware-accelerated and RAM-only execution, you must choose the launch command that matches your setup.
 
-1. **Via CLI**:
+1. Build the Application Image
     ```
     docker build -t florence_ai:latest .
     ```
+2. Start the Services
+Based on your decision in Step 2, choose one of the following commands:
 
+    + For AMD GPU Users:
+    If you configured your hardware GIDs and wish to use ROCm acceleration, use the default compose file:
+    ```
+    docker compose up -d
+    ```
+    + For CPU / RAM-Only Users:
+    If you do not have a GPU or wish to save power, use the CPU-optimized configuration to prevent Docker "device not found" errors:
+    ```
+    docker compose -f docker-compose.cpu.yaml up -d
+    ```
 
 ## 🚀 Usage
 
@@ -127,14 +156,14 @@ Once the containers are up, you can access the Florence model through two interf
 
 ## ⚙️ Service Control (Selective Startup)
 
-You can choose to run the API and the Chat UI together or independently. Control this via your `.env` file:
+You can choose to run the API and the Chat UI together or independently. Control this via your `.env` file: Add the following flags in your `.env` and re build the container
 
 | Flag | Logic | Result |
 | :--- | :--- | :--- |
-| `DISABLE_FLORENCE_API=true` | If present/non-empty | FastAPI (Port 8000) will **not** start. |
-| `DISABLE_FLORENCE_CHAT=true` | If present/non-empty | Chainlit (Port 8010) will **not** start. |
+| `DISABLE_FLORENCE_API=true` | If present/non-empty | FastAPI (@ Port 8020) will **not** start. |
+| `DISABLE_FLORENCE_CHAT=true` | If present/non-empty | Chainlit (@ Port 8010) will **not** start. |
 
-**Note:** If both are left blank (default), both services start in parallel. If both are set to `true`, the container will exit with an error to prevent wasted resources.
+**Note:** If both are left blank (default) or not present in `.env`, both services start in parallel. If both are set to `true`, the container will exit with an error to prevent wasted resources.
 
 
 ### 🛰️ API Feature: `store_image` Flag
@@ -170,34 +199,23 @@ This project is integrated with Pydantic Logfire.
 2. Development Mode (DEV_MODE=true): Logfire is disabled, and logs are output to the standard console for easier local debugging.
        Neither Chainlit or FastAPI is run by default. Its left upto the developer to chose which they want to run. Commands are available in enterypoint.sh. Or you can run them using tasks available in .vscode/tasks.json
 
-## 📜 Credits & References
 
-This project is built upon the excellent foundation provided by the original MS-Florence2 implementation. Special thanks to the original authors:
-
-[Original implementation](https://github.com/askaresh/MS-Florence2/tree/main/app)
-
-
-## 🚀 Key Enhancement: Universal Hardware Support (CPU & GPU)
+## 🚀 Key Enhancement: Singleton Model Worker & Scalable Backend
 
 Unlike the [original implementation](https://github.com/askaresh/MS-Florence2/tree/main/app) which was strictly optimized for NVIDIA GPUs via CUDA, this wrapper is designed to be hardware-agnostic. 
 
-- **CPU Support**: By utilizing a `Python 3.11` base image and explicitly configuring the model to use `torch.device("cpu")`, this project can run on any standard PC, laptop, or server without a dedicated GPU.
-- **Portability**: This makes the project ideal for local development, CI/CD pipelines, and cost-effective cloud deployments where expensive GPU instances aren't required.
+A major architectural improvement in this wrapper is the decoupling of the Florence-2 Inference Engine from the Web Servers (FastAPI/Chainlit).
 
-### Configuring Acceleration (.env)
-You can control the hardware optimization via the `ACCELERATOR` setting. If the variable is absent, it defaults to **CPU mode**.
++ *Memory Efficiency*: Traditional wrappers load the model into every API worker process. By using a standalone [model_worker.py](./app/model_worker.py), only one instance of the 1.6GB Florence-2 model resides in memory, regardless of how many FastAPI or Chainlit instances are running.
 
-| `ACCELERATOR` Value | Description | Requirements |
-| :--- | :--- | :--- |
-| `cpu` (Default) | Runs on any standard processor. | None. |
-| `rocm` | Enables AMD GPU acceleration via ROCm. | AMD GPU, `amdgpu` drivers, and mapping `/dev/kfd` in docker. |
++ *Scalable FastAPI via Gunicorn*: You can now scale the API throughput by increasing the API_WORKER_COUNT flag in your `.env`. Gunicorn will spawn multiple FastAPI workers to handle concurrent web requests, while they all share the single model worker via a Redis-backed queue.
 
-### AMD/ROCm Setup
-To enable AMD support, update your `.env`:
-```bash
-ACCELERATOR=rocm
-AMD_GPU_DEVICE=/dev/dri
-```
++ Universal Hardware Support:
+
+    + *CPU Support*: By utilizing a Python 3.11 base image and explicitly configuring the model to use torch.device("cpu"), this project can run on any standard PC, laptop, or server without a dedicated GPU.
+
+    + *Portability*: This makes the project ideal for local development and cost-effective cloud deployments where expensive GPU instances aren't required.
+
 
 <mark>Note</mark>: If ACCELERATOR is not set, the build process defaults to a lightweight CPU-only version of PyTorch to save space.
 
@@ -215,10 +233,16 @@ AMD_GPU_DEVICE=/dev/dri
 
 ![High Level Architecture Diagram](./demo/High%20level%20Architecture%20Diagram.png)
 
-
 ## 🤖 GitHub Actions
 
 This project includes a manual workflow to build and push images to GHCR.
 1. Go to **Actions** in your GitHub repo.
 2. Select **Build and Push Florence-2 Image**.
 3. Click **Run workflow**, choose your hardware (`cpu` or `rocm`), and click the button.
+
+
+## 📜 Credits & References
+
+This project is built upon the excellent foundation provided by the original MS-Florence2 implementation. Special thanks to the original authors:
+
+[Original implementation](https://github.com/askaresh/MS-Florence2/tree/main/app)

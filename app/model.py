@@ -62,6 +62,18 @@ class Florence2Model:
         except Exception as e:
             logger.exception("Failed to load model", error=str(e))
             raise
+    
+        # In model.py
+    def warmup(self):
+        logger.info("🔥 Warming up model with Batch Size 2...")
+        # Create a dummy batch of 2 to force kernel compilation for batching
+        dummy_input = [
+            {"task": "<OD>", "text": None, "image": Image.new('RGB', (224, 224))},
+            {"task": "<OD>", "text": None, "image": Image.new('RGB', (224, 224))}
+        ]
+        # Run it once to "bake" the kernels
+        self.run_batch(dummy_input)
+        logger.info("✅ Warmup complete.")
 
     def preprocess_image(self, image_data):
         if not isinstance(image_data, Image.Image):
@@ -71,24 +83,47 @@ class Florence2Model:
         return image_data
 
     def run_example(self, task_prompt, text_input=None, image_data=None):
+        """
+        Maintains backward compatibility for Chainlit.
+        Wraps the batch logic to process a single request.
+        """
+        results = self.run_batch([
+            {"task": task_prompt, "text": text_input, "image": image_data}
+        ])
+        return results[0]
+
+    def run_batch(self, tasks):
+        """
+        Core Batching Engine. Handles list of tasks for the Worker.
+        Each task is a dict: {'task': str, 'text': str, 'image': bytes}
+        """
+        if not tasks:
+            return []
+
         start_time = time.time()
-        logger.info("Starting inference", task=task_prompt)
+        images = []
+        prompts = []
         
         try:
-            image = self.preprocess_image(image_data)
-            prompt = task_prompt if text_input is None else task_prompt + text_input
-            
-            # Log structured metadata about the request
-            logger.debug("Processing tokens", 
-                         task=task_prompt, 
-                         has_text_input=bool(text_input),
-                         img_dims=f"{image.width}x{image.height}")
+            for t in tasks:
+                # Use your existing preprocessing logic for consistency
+                image = self.preprocess_image(t['image'])
+                images.append(image)
+                
+                prompt = t['task'] if t.get('text') is None else t['task'] + t['text']
+                prompts.append(prompt)
 
-            # We determine the correct dtype based on whether we are on GPU or CPU
+            # Determine the correct dtype
             torch_dtype = torch.float16 if self.device.type == "cuda" else torch.float32
 
-            inputs = self.processor(text=prompt, images=image, return_tensors="pt").to(self.device, torch_dtype)
-            
+            # The "Bus": Processor handles all images and prompts at once
+            inputs = self.processor(
+                text=prompts, 
+                images=images, 
+                return_tensors="pt", 
+                padding=True
+            ).to(self.device, torch_dtype)
+
             generated_ids = self.model.generate(
                 input_ids=inputs["input_ids"],
                 pixel_values=inputs["pixel_values"],
@@ -96,23 +131,25 @@ class Florence2Model:
                 do_sample=False,
                 num_beams=3,
             )
+
+            generated_texts = self.processor.batch_decode(generated_ids, skip_special_tokens=False)
             
-            generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-            parsed_answer = self.processor.post_process_generation(
-                generated_text,
-                task=task_prompt,
-                image_size=(image.width, image.height),
-            )
-            
+            parsed_results = []
+            for i, gen_text in enumerate(generated_texts):
+                parsed = self.processor.post_process_generation(
+                    gen_text,
+                    task=tasks[i]['task'],
+                    image_size=(images[i].width, images[i].height),
+                )
+                parsed_results.append(parsed)
+
             duration = round(time.time() - start_time, 2)
-            logger.info("Inference complete", 
-                        duration_sec=duration, 
-                        task=task_prompt)
+            logger.info("Batch inference complete", 
+                        batch_size=len(tasks), 
+                        duration_sec=duration)
             
-            return parsed_answer
+            return parsed_results
 
         except Exception as e:
-            logger.exception("Error during model inference", 
-                             task=task_prompt, 
-                             error=str(e))
+            logger.exception("Error during batch model inference", error=str(e))
             raise

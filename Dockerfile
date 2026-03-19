@@ -7,18 +7,21 @@ ARG DEV_MODE=false
 # 1. Standard installs
 COPY requirements.txt .
 RUN uv pip install --system --no-cache -r requirements.txt
-RUN mkdir -p /app/model_weights
+
+# Create the unified directory
+RUN mkdir -p /app/hf_cache/florence-2-large
 
 # 2. THE DOWNLOAD BLOCK
-# We move the "if" logic into Python so Docker doesn't get confused by shell syntax
+# This runs during GH Actions (where DEV_MODE is false)
 RUN python3 <<EOF
 import os
 from unittest.mock import patch
 
-# Only run the download if DEV_MODE is false
-dev_mode_env = os.environ.get('DEV_MODE', '${DEV_MODE}').lower()
+# Get the build-arg
+dev_mode_env = "${DEV_MODE}".lower()
+
 if dev_mode_env == 'false':
-    print("PROD DETECTED: Baking model into image...")
+    print("🚀 PROD BUILD: Baking model into /app/hf_cache/florence-2-large...")
     from transformers import AutoProcessor, AutoModelForCausalLM
     from transformers.dynamic_module_utils import get_imports
 
@@ -29,7 +32,7 @@ if dev_mode_env == 'false':
         return imports
 
     model_id = 'microsoft/Florence-2-large'
-    save_path = '/app/model_weights'
+    save_path = '/app/hf_cache/florence-2-large'
 
     with patch('transformers.dynamic_module_utils.get_imports', fixed_get_imports):
         p = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
@@ -37,15 +40,14 @@ if dev_mode_env == 'false':
         p.save_pretrained(save_path)
         m.save_pretrained(save_path)
 else:
-    print("DEV_MODE ACTIVE: Skipping internal download.")
+    print("🛠️ DEV_MODE ACTIVE: Skipping internal download. Local mount will be used.")
 EOF
 
 # 3. Final steps
 COPY . .
 
-# Environment path switching
-ENV MODEL_ID=${DEV_MODE:+"/app/hf_cache/florence-2-large"}
-ENV MODEL_ID=${MODEL_ID:-"/app/model_weights"}
+# Unified Model ID for everyone
+ENV MODEL_ID="/app/hf_cache/florence-2-large"
 
 RUN chmod +x entrypoint.sh 
 ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]

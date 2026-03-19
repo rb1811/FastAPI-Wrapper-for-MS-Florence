@@ -1,23 +1,26 @@
 import structlog
+import os
+import redis
+import json
+import uuid
+import base64
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
-import base64
 from app.logging_config import get_logger, setup_logging
 from app.constants import TASK_TYPES
-from app.config import S3StorageClient, ModelConfig
-from app.model import Florence2Model
+from app.config import S3StorageClient
 from app.processing import run_inference_and_visualize
-import time
 
 # 1. Initialize Logging and Global Clients
 setup_logging()
 logger = get_logger(__name__)
 storage_client = S3StorageClient()
-# Ideally, the model is initialized once at the app level/lifespan
-model = Florence2Model(ModelConfig()) 
+from app.redis_model_proxy import RedisModelProxy
+
+# Instantiate the proxy
+model_proxy = RedisModelProxy()
 
 florence_router = APIRouter(tags=["Run Florence LLM"])
-
 
 """
 store_image Flag determines whether API should store the images in Blob storage and return the path to the file 
@@ -36,6 +39,8 @@ async def predict(
         
         input_representation = None
         
+        logger.info(f"API Prediction request received reqest_id={request_id}, task={task}, store_image={store_image}")
+        
         # 1. HANDLE INPUT IMAGE
         if store_image:
             # Match the keys expected by S3StorageClient.upload_file (**kwargs)
@@ -53,25 +58,26 @@ async def predict(
             b64_input = base64.b64encode(image_bytes).decode('utf-8')
             input_representation = f"data:{file.content_type};base64,{b64_input}"
 
-        # 2. RUN INFERENCE (Passing store_image to core logic)
+       # 2. Run inference via the Proxy
         result, output_data = await run_inference_and_visualize(
-            model=model,
-            task_type=task,
-            text_input=text_input,
+            model=model_proxy, 
+            task_type=task, 
+            text_input=text_input, 
             image_bytes=image_bytes,
-            return_path=store_image, # Maps to the S3 logic in processing.py
-            request_id=request_id 
+            return_path=store_image,
+            request_id=request_id
         )
 
-        # 3. HANDLE OUTPUT IMAGES
+        logger.info("processing of image complete")
+        
+        # 3. RESTORE THE CONTRACT: Convert bytes to Base64 if not stored in S3
         final_outputs = []
         for item in output_data:
             if store_image:
-                # item is an S3 URL, refresh it to be presigned
-                s3_key = item.split(f"{storage_client.bucket}/")[-1].split('?')[0]
-                final_outputs.append(storage_client.generate_presigned_url(s3_key))
+                # If it's a string, it's already an S3 URL
+                final_outputs.append(item)
             else:
-                # item is raw bytes, convert to Base64
+                # If it's bytes, FastAPI will crash unless we Base64 encode it
                 b64_output = base64.b64encode(item).decode('utf-8')
                 final_outputs.append(f"data:image/png;base64,{b64_output}")
 
@@ -83,10 +89,10 @@ async def predict(
             "result_data": result,
             "output_visualized": final_outputs 
         }
-    except Exception as e:
-        logger.exception("Inference endpoint failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
 
+    except Exception as e:
+        logger.exception("API Prediction failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 @florence_router.get("/tasks", response_model=List[str])
 async def get_tasks():

@@ -27,6 +27,7 @@ async def run_inference_and_visualize(model, task_type, text_input, image_bytes,
     """
     Core logic: Takes task, input, and image bytes. 
     Returns the raw result and a list of processed image data (bytes or MinIO URLs).
+    if return_path = True, output image gets stored in the minio and path is returned
     """
     logger.info("Running inference core", task=task_type, return_path=return_path)
     
