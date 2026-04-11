@@ -10,6 +10,7 @@ from app.logging_config import get_logger
 logger = get_logger(__name__)
 
 r = redis.from_url(os.environ.get("REDIS_HOST", "redis://infra-redis:6379"))
+MODEL_TIMEOUT = int(os.environ.get("MODEL_TIMEOUT", "30"))
 
 class RedisModelProxy:
     """
@@ -24,7 +25,7 @@ class RedisModelProxy:
         # Get existing request_id from context or create one
         request_id = structlog.contextvars.get_contextvars().get("request_id") or uuid.uuid4().hex
         
-        logger.info(f"📡 Dispatching task to worker task. request_id {request_id} ")
+        logger.info(f"Dispatching task to worker task. request_id {request_id} ")
 
         # 1. Package the task
         payload = {
@@ -39,10 +40,10 @@ class RedisModelProxy:
 
         # 3. Blocking Wait on the private mailbox (request_id)
         # Timeout is 30 seconds
-        res = r.brpop(request_id, timeout=60)
+        res = r.brpop(request_id, timeout=MODEL_TIMEOUT)
 
         if not res:
-            logger.error(f"⏰ Worker response timeout request_id {request_id}")
+            logger.error(f"Worker response timeout request_id {request_id}")
             raise HTTPException(status_code=504, detail="Model worker timeout. The queue might be too long.")
 
         # res is a tuple: (key_name, value)

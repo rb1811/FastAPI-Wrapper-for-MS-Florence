@@ -1,4 +1,5 @@
 import os
+import signal
 import torch
 from PIL import Image
 import io
@@ -10,6 +11,16 @@ from app.logging_config import get_logger
 
 # Use the structured logger
 logger = get_logger(__name__)
+
+class ModelTimeoutException(Exception):
+    """Custom exception for timeouts"""
+    pass
+
+def timeout_handler(signum, frame):
+    raise ModelTimeoutException("Model inference exceeded limit")
+
+timeout_val = int(os.environ.get("MODEL_TIMEOUT", "30"))
+
 
 def fixed_get_imports(filename: str | os.PathLike) -> list[str]:
     """Workaround for unnecessary flash_attn requirement on CPU/AMD."""
@@ -72,7 +83,7 @@ class Florence2Model:
             {"task": "<OD>", "text": None, "image": Image.new('RGB', (224, 224))}
         ]
         # Run it once to "bake" the kernels
-        self.run_batch(dummy_input)
+        self.run_batch(dummy_input, timeout_val=120)
         logger.info("✅ Warmup complete.")
 
     def preprocess_image(self, image_data):
@@ -92,7 +103,7 @@ class Florence2Model:
         ])
         return results[0]
 
-    def run_batch(self, tasks):
+    def run_batch(self, tasks, timeout_val=timeout_val):
         """
         Core Batching Engine. Handles list of tasks for the Worker.
         Each task is a dict: {'task': str, 'text': str, 'image': bytes}
@@ -103,6 +114,9 @@ class Florence2Model:
         start_time = time.time()
         images = []
         prompts = []
+        
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout_val)
         
         try:
             for t in tasks:
@@ -148,8 +162,12 @@ class Florence2Model:
                         batch_size=len(tasks), 
                         duration_sec=duration)
             
+            signal.alarm(0)
             return parsed_results
 
+        except ModelTimeoutException:
+            logger.error("Hard timeout reached during model.generate")
+            raise
         except Exception as e:
             logger.exception("Error during batch model inference", error=str(e))
             raise

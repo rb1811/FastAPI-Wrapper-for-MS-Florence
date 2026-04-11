@@ -77,9 +77,19 @@ while True:
                 "image": base64.b64decode(t['image_b64'])
             })
 
-        # 4. Run Inference
         inference_start = time.time()
-        results = model.run_batch(batch_input)
+        
+        # 4. Run Inference
+        try:
+            results = model.run_batch(batch_input)
+        except Exception as e:
+            # Notify ALL pending requests in this batch that it failed/timed out
+            for t in task_list:
+                req_id = t.get('request_id')
+                r.lpush(req_id, json.dumps({"error": str(e)}))
+                r.expire(req_id, 10)
+            continue
+        
         duration = round(time.time() - inference_start, 2)
 
         # 5. Delivery

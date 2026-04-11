@@ -5,7 +5,7 @@ echo "Current Model Path (MODEL_ID): $MODEL_ID"
 
 wait_for_worker() {
     local log_file="/tmp/model_worker.log"
-    local timeout=60
+    local timeout=120
     local elapsed=0
     
     echo "[WAIT] Monitoring GPU Warmup..."
@@ -23,7 +23,7 @@ wait_for_worker() {
             return 0
         fi
 
-        echo " Still warming up... (${elapsed}s/60s)"
+        echo " Still warming up... (${elapsed}s/${timeout}s)"
         sleep 5
         elapsed=`expr $elapsed + 5`
     done
