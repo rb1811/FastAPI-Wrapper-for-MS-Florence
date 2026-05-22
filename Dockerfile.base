@@ -1,13 +1,12 @@
-# 1. Start with Python slim
+# 1. Start with Python slim (Keep it uniform and standard)
 FROM python:3.11-slim
 
-# Define a Build Argument (default to cpu)
 ARG DEVICE=cpu
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
-# 3. Install system libraries
+# 3. Install runtime and build system libraries
 RUN apt-get update && apt-get install -y \
     libgl1 libglib2.0-0 gcc curl tar ca-certificates procps && \
     rm -rf /var/lib/apt/lists/*
@@ -17,10 +16,16 @@ RUN curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
     apt-get update && apt-get install -y infisical && \
     rm -rf /var/lib/apt/lists/*
 
-# 5. Conditional Torch Installation
-# If DEVICE=rocm, install ROCm version. Otherwise, install CPU version.
+# 5. Conditional Torch Installation with surgical architecture purge
 RUN if [ "$DEVICE" = "rocm" ] ; then \
         uv pip install --system --no-cache torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2; \
+        \
+        echo "🧹 Purging useless server-grade AMD GPU kernels to save gigabytes..."; \
+        find /usr/local/lib/python3.11/site-packages/torch/lib/ -name "*.co" \
+             ! -name "*gfx1100*" \
+             ! -name "*gfx1101*" \
+             ! -name "*gfx1102*" \
+             -delete; \
     else \
         uv pip install --system --no-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
     fi

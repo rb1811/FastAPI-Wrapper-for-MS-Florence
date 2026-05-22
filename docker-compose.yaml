@@ -21,6 +21,7 @@ services:
       - "${FASTAPI_PORT}:8000"
     volumes:
       - .:/app
+      - florence_model:/app/hf_cache
     restart: unless-stopped
     entrypoint: ["./entrypoint.sh"]
     devices:
@@ -44,3 +45,8 @@ networks:
         - subnet: 172.20.0.0/24  # Forces this specific safe range
   infra-storage:
     external: true
+
+volumes:
+  florence_model:
+    name: florence_model
+    driver: local

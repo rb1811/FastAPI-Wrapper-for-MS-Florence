@@ -64,17 +64,7 @@ TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 ## 🐳 How to start the project?
 
-#### Step 1: 📥 Local Model Preparation
-
-To ensure fast startup and offline capability, the Florence-2 model must be downloaded locally before building the Docker containers. It avoid downloading the model (1.6Gbs) everytime, you start the container services.
-
-1. Create a local folder:
-    ```
-    mkdir -p hf_cache/florence-2-large
-    ```
-2. Download the model files from HuggingFace. [Click here for Local Florence Installation instructions](./Local%20Florence%20Installation.md)
-
-#### 🛠️ Step 2: Hardware Acceleration & GPU Permissions (Linux/AMD Only)
+#### 🛠️ Step 1: Hardware Acceleration & GPU Permissions (Linux/AMD Only)
 
 By default, the project runs in CPU Mode. If you wish to run the model entirely on system RAM, skip this step and move directly to Step 3. If you have an AMD GPU, you can enable ROCm acceleration. This requires mapping your host's hardware group IDs (GID) and setting specific flags so the container can talk to the GPU.
 
@@ -113,7 +103,7 @@ echo "VIDEO_GID=$VGID" >> .env
 echo "HSA_OVERRIDE_GFX_VERSION=11.0.0" >> .env
 ```
 
-#### Step 3: Build the Base Image
+#### Step 2: Build the Base Image
 This project uses a Two-Stage Docker Build to maximize efficiency. By separating the heavy AI dependencies from the application code, we save time and data during rebuilds.
 
 Dockerfile.base contains all the "heavy" dependencies like PyTorch, Transformers, and CUDA libraries. You have 2 options for this.
@@ -124,7 +114,7 @@ Dockerfile.base contains all the "heavy" dependencies like PyTorch, Transformers
     ```
 2. **Via VS Code** (ctrl+shift+p: Run Task): Run the task "Florence: Build Base Image" from [vscode tasks](./.vscode/tasks.json)
 
-#### Step 4: Build & Launch the Application
+#### Step 3: Build & Launch the Application
 This step adds your application code on top of the base image. Since this project supports both hardware-accelerated and RAM-only execution, you must choose the launch command that matches your setup.
 
 1. Build the Application Image

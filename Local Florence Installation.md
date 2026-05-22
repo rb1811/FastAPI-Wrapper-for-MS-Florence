@@ -1,3 +1,5 @@
+THe project automatically pulls the Florence model during boot using [Download Florence Script](./download_model.sh). Once it pulls next time onwards it skips it. In case if script fails for some reason please follow this guide, its a 1 time setup 
+
 ## 1. Install Git LFS
 
 First, you need to ensure Git Large File Storage (LFS) is installed on your system to handle the large model weights.

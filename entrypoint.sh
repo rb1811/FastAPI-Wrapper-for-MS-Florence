@@ -57,6 +57,9 @@ infisical export --env "dev" --path "/florence" --projectId "$INFISICAL_PROJECT_
 # 3. Load variables
 . /tmp/infisical_vars
 
+echo "Checking for model weights..."
+./download_model.sh
+
 echo "🧠 Starting Single Model Worker (The Brain)..."
 export PYTHONPATH=$PYTHONPATH:.
 rm -f /tmp/model_worker.log
