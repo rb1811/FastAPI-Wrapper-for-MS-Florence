@@ -23,13 +23,13 @@ def image_to_bytes(image):
     return buf.getvalue()
 
 
-async def run_inference_and_visualize(model, task_type, text_input, image_bytes, return_path=False, request_id=None):
+async def run_inference_and_visualize(model, task_type, text_input, image_bytes, return_path=False, request_id=None, path_prefix="chainlit"):
     """
     Core logic: Takes task, input, and image bytes. 
     Returns the raw result and a list of processed image data (bytes or MinIO URLs).
     if return_path = True, output image gets stored in the minio and path is returned
     """
-    logger.info("Running inference core", task=task_type, return_path=return_path)
+    logger.info("Running inference core", task=task_type, return_path=return_path, path_prefix=path_prefix)
     
     # 1. Load Image
     original_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -69,7 +69,8 @@ async def run_inference_and_visualize(model, task_type, text_input, image_bytes,
                 data=img_bytes, 
                 mime="image/png", 
                 object_key=f"result_{task_type}.png",
-                threadId=request_id
+                threadId=request_id, 
+                path_prefix=path_prefix
             )
             visualized_images.append(upload_result["url"])
         else:

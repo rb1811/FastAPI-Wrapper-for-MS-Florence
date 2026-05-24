@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.logging_config import get_logger
 import os
 import chainlit as cl
-from datetime import datetime
+from datetime import datetime, timedelta
 import boto3
 from chainlit.data.storage_clients.base import BaseStorageClient
 
@@ -24,7 +24,7 @@ class ModelConfig(BaseSettings):
         super().__init__(**kwargs)
         # Structured log with model details as metadata
         logger.info("Model configuration initialized", 
-                    model_id=self.MODEL_ID, 
+                    model_id=self.MODEL_ID, \
                     rate_limit=self.RATE_LIMIT)
 
 
@@ -33,17 +33,19 @@ class S3StorageClient(BaseStorageClient):
         self.bucket = os.getenv("S3_BUCKET")
         endpoint = os.getenv("S3_ENDPOINT_URL")
         
-        logger.info("Initializing S3 Storage Client", 
+        logger.info("Initializing S3 Storage Client (SeaweedFS Compatible)", 
                     bucket=self.bucket, 
                     endpoint=endpoint)
         
         try:
+            # SeaweedFS uses path-style addressing natively for its S3 emulation layer
             self.client = boto3.client(
                 "s3",
                 endpoint_url=endpoint,
                 aws_access_key_id=os.getenv("S3_ACCESS_KEY"),
                 aws_secret_access_key=os.getenv("S3_SECRET_KEY"),
-                use_ssl=False
+                use_ssl=False,
+                config=boto3.session.Config(signature_version='s3v4')
             )
             logger.info("S3 Client created successfully")
         except Exception as e:
@@ -53,8 +55,10 @@ class S3StorageClient(BaseStorageClient):
         actual_content = kwargs.get("data")
         actual_mime = kwargs.get("mime", "application/octet-stream")
         now = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        path_prefix = kwargs.get("path_prefix", "chainlit")
 
         thread_id = kwargs.get("threadId") or cl.user_session.get("id")
+        expiration_time = datetime.utcnow() + timedelta(days=1)
         
         if not thread_id:
             try:
@@ -67,7 +71,7 @@ class S3StorageClient(BaseStorageClient):
         path = f"{thread_id}/{now}" if thread_id else now
         original_key = kwargs.get("object_key", "file")
         filename = original_key.split("/")[-1] 
-        clean_key = f"florence/{path}/{filename}"
+        clean_key = f"{path_prefix}/{path}/{filename}"
 
         logger.info("Starting file upload to S3", 
                     key=clean_key, 
@@ -79,15 +83,17 @@ class S3StorageClient(BaseStorageClient):
                 Bucket=self.bucket,
                 Key=clean_key,
                 Body=actual_content,
-                ContentType=actual_mime
+                ContentType=actual_mime,
+                Expires=expiration_time
             )
             logger.info("✅ Upload successful", s3_path=clean_key)
         except Exception as e:
             logger.exception("S3 upload failed", key=clean_key, error=str(e))
             raise e
 
-        public_base = os.getenv('S3_PUBLIC_URL', 'http://localhost:9091')
-        return {"url": f"{public_base}/{self.bucket}/{clean_key}"}
+        # Updated for SeaweedFS port routing convention
+        public_base = os.getenv('S3_PUBLIC_URL', 'http://localhost:8030')
+        return {"url": f"{public_base}/buckets/{self.bucket}/{clean_key}"}
     
 
     async def delete_file(self, filename: str):
@@ -100,7 +106,10 @@ class S3StorageClient(BaseStorageClient):
 
 
     async def get_read_url(self, filename: str):
-        url = f"{os.getenv('S3_ENDPOINT_URL')}/{self.bucket}/{filename}"
+        # SeaweedFS maps S3 buckets under the '/buckets/' URL path on the Filer API endpoint
+        # Keeping signature intact, but pointing directly to the SeaweedFS data route cleanly
+        endpoint = os.getenv('S3_ENDPOINT_URL')
+        url = f"{endpoint}/buckets/{self.bucket}/{filename}"
         logger.debug("Generated read URL", key=filename, url=url)
         return url
     
@@ -111,8 +120,6 @@ class S3StorageClient(BaseStorageClient):
         :param expiration: Time in seconds until the link expires
         """
         try:
-            # Note: We use the internal client but it must return a URL 
-            # reachable by your browser (localhost)
             url = self.client.generate_presigned_url(
                 'get_object',
                 Params={
@@ -122,11 +129,16 @@ class S3StorageClient(BaseStorageClient):
                 ExpiresIn=expiration
             )
             
-            # Fix: If your internal S3_ENDPOINT_URL uses 'infra-minio', 
-            # we must swap it for 'localhost' so your browser can find it.
-            public_base = os.getenv('S3_PUBLIC_URL', 'http://localhost:9091')
-            if "infra-minio" in url:
-                url = url.replace("http://infra-minio:9091", public_base)
+            # Adjusted to swap out your internal Seaweed container name service 
+            # with your browser accessible public localhost endpoint.
+            internal_host = os.getenv('FLORENCE_S3_SERVICE_NAME', 'florence-s3-seaweedfs')
+            public_base = os.getenv('S3_PUBLIC_URL', 'http://localhost:8030')
+            
+            if internal_host in url:
+                url = url.replace(f"http://{internal_host}:8000", public_base)
+                # Ensure the path style reflects SeaweedFS buckets structure
+                if f"/{self.bucket}/" in url and f"/buckets/{self.bucket}/" not in url:
+                    url = url.replace(f"/{self.bucket}/", f"/buckets/{self.bucket}/")
                 
             return url
         except Exception as e:
@@ -139,7 +151,6 @@ class S3StorageClient(BaseStorageClient):
             self.client.head_object(Bucket=self.bucket, Key=object_key)
             return True
         except self.client.exceptions.ClientError as e:
-            # 404 means it doesn't exist; other codes mean different issues
             if e.response['Error']['Code'] == "404":
                 return False
             logger.error("Error checking file existence", key=object_key, error=str(e))

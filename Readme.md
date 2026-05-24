@@ -1,16 +1,14 @@
 # FastAPI Wrapper for Microsoft Florence-2
 
-A high-performance, production-ready wrapper for Microsoft's Florence-2 Vision-Language Model. This project provides both a FastAPI backend for programmatic access and a Chainlit frontend for interactive chat, integrated with Infisical for secrets, MinIO for storage, and Logfire for observability.
+A high-performance, production-ready wrapper for Microsoft's Florence-2 Vision-Language Model. This project provides both a FastAPI backend for programmatic access and a Chainlit frontend for interactive chat, integrated, seaweedFS for storage and auto auto purging of blobs AKA Object Life Cycle Management, and Logfire for observability.
 
 ## 🛠 Prerequisites
 
-Before running this project, ensure you have the core infrastructure running. This project relies on the following services:
+Before running this project, you need to create a Logfire Account (optional). If you don't create its totally fine, logs will be routed to standard docker logs. But if you need remote monitoring for logging, this project gives you that flexibility via logfirem,. 
 
-1. Infisical: For secret management.
-2. MinIO: For storing uploaded and processed images. To eliminate the need to write custom clean up scripts
-3. Logfire: For logging and monitoring
+#### 📉 Logfire 
+For structured logging and monitoring. Create a free [Logfire](https://pydantic.dev/logfire) account and select the free plan. The [free plan](https://pydantic.dev/pricing) is very generous for localhost project. They give 10M span AKA logs. If you have ever used Grafana or Humio, you will find almost all the developer needful features in here. Create a project in Logfire and create a **write** token. Copy the token and put it in `.env`
 
-<mark>[!IMPORTANT]</mark> For detailed instructions on setting up Infisical, MinIO and Logfire, please refer to the [Infisical-Minio](https://github.com/rb1811/infra-monitoring) project. You will need to obtain your Machine Identity credentials there.
 
 3. Ensure the folder structure looks like this:
 ```
@@ -28,31 +26,23 @@ project_root/
 └── ... other files
 ```
 
+Don't worry about the files inside hf_cache folder. You can skip creating this folder altogether. When you build the project for the first time, the project auto pulls the Florence Models from the internet and stores it here and mounts it via Docker Volumne. For code implementation details refer: [Florence Model Download Script](./download_model.sh)
+
 ## ⚙️ Configuration (.env)
 
 Create a .env file in the root directory. Use the following template:
 
 ```
-# Ports
 CHAINLIT_PORT=8010
 FASTAPI_PORT=8020
 
-# --- INFISICAL MACHINE IDENTITY ---
-# Refer to https://github.com/rb1811/infra-monitoring for setup
-INFISICAL_PROJECT_ID=your_project_id
-INFISICAL_MACHINE_ID=your_machine_id
-INFISICAL_MACHINE_SECRET=your_machine_secret
-
-# --- OBSERVABILITY ---
+API_WORKER_COUNT=2
 DEV_MODE=false
+SERVICE_NAME=florence-ai
 LOG_LEVEL=DEBUG
 
-# --- MODEL ---
-SERVICE_NAME=florence-ai
-API_WORKER_COUNT=2
-MODEL_TIMEOUT=30
-
-# --- GPU RELATED CONFIG ---
+# SKIP this section if you wish to run on CPU only
+# ------ AMD RELATED ENV ------------
 ACCELERATOR=rocm
 AMD_GPU_DEVICE=/dev/dri
 RENDER_GID=992
@@ -60,13 +50,47 @@ VIDEO_GID=44
 HSA_OVERRIDE_GFX_VERSION=11.0.0
 ROCM_ALLOW_UNSAFE_ASIC=1
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
+MODEL_TIMEOUT=30
+# ------ END  AMD RELATED ENV ------
+
+
+# Postgres Configurations
+POSTGRES_USER=admingithub
+POSTGRES_PASSWORD=admin
+POSTGRES_DB=florence_db
+FLORENCE_SQL_SERVICE_NAME=florence_postgres
+# Evaluated statically to prevent parsing issues inside the container
+DATABASE_URL=postgresql+asyncpg://admin:admin@florence_postgres:5432/florence_db
+
+LOGFIRE_TOKEN=<LOGFIRE TOKEN>
+
+# Redis Configurations
+FLORENCE_CACHE_SERVICE_NAME=florence-redis
+REDIS_HOST=redis://florence-redis:6379
+
+# SeaweedFS Configurations
+FLORENCE_S3_SERVICE_NAME=florence-s3-seaweedfs
+SEAWEEDFS_PORT=8030
+BUCKET_TTL=1d
+
+# Core variables for your config.py S3StorageClient
+S3_BUCKET=florence-uploads
+S3_ACCESS_KEY=adminseaweed
+S3_SECRET_KEY=adminseaweed
+S3_ENDPOINT_URL=http://florence-s3-seaweedfs:8000
+S3_PUBLIC_URL=http://localhost:8030
+
+# Native triggers read directly by 'weed mini'
+S3_TABLE_BUCKET=
+AWS_ACCESS_KEY_ID=adminseaweed
+AWS_SECRET_ACCESS_KEY=adminseaweed
 ```
 
 ## 🐳 How to start the project?
 
 #### 🛠️ Step 1: Hardware Acceleration & GPU Permissions (Linux/AMD Only)
 
-By default, the project runs in CPU Mode. If you wish to run the model entirely on system RAM, skip this step and move directly to Step 3. If you have an AMD GPU, you can enable ROCm acceleration. This requires mapping your host's hardware group IDs (GID) and setting specific flags so the container can talk to the GPU.
+By default, the project runs in CPU Mode. If you wish to run the model entirely on system RAM, skip this step and move directly to Step 2. If you have an AMD GPU, and its relevant drivers installed in your machine, you can enable ROCm acceleration. This requires mapping your host's hardware group IDs (GID) and setting specific flags so the container can talk to the GPU.
 
 *1. Auto-Detect Hardware Config (Recommended)*
 If using VS Code, we provide an automated task to detect your hardware IDs and inject the necessary ROCm optimization flags directly into your .env:
@@ -106,7 +130,7 @@ echo "HSA_OVERRIDE_GFX_VERSION=11.0.0" >> .env
 #### Step 2: Build the Base Image
 This project uses a Two-Stage Docker Build to maximize efficiency. By separating the heavy AI dependencies from the application code, we save time and data during rebuilds.
 
-Dockerfile.base contains all the "heavy" dependencies like PyTorch, Transformers, and CUDA libraries. You have 2 options for this.
+Dockerfile.base contains all the "heavy" dependencies like PyTorch, Transformers, and ROCm libraries. You have 2 options for this.
 
 1. **Via CLI**: 
     ```
@@ -143,6 +167,7 @@ Once the containers are up, you can access the Florence model through two interf
 | ---------- | ----------------------------- | ------------------------------------------------------------ |
 | _FastAPI_  | `http://localhost:8020`       | Rest API for programmatic inference and /predict endpoints   |
 | _Chainlit_ | `http://localhost:8010`       | User-friendly chat interface for interactive image analysis. |
+| _SeaweedFS_ | `http://localhost:8030`       | Seaweed interface for interactive image viewing. |
 
 
 ## ⚙️ Service Control (Selective Startup)
@@ -163,7 +188,7 @@ When using the `/predict` endpoint, you can control whether the API behaves as a
 
 | Flag | Behavior | Response Format |
 | :--- | :--- | :--- |
-| `true` (Default) | **Persistent**: Both input and output images are uploaded to MinIO S3. | Returns **Presigned S3 URLs**. |
+| `true` (Default) | **Persistent**: Both input and output images are uploaded to SeaweedFS S3. | Returns **Presigned S3 URLs**. |
 | `false` | **Transient**: No files are stored in S3. Images are processed entirely in memory. | Returns **Base64 Encoded Strings**. |
 
 #### Example Request (Curl)
@@ -179,13 +204,13 @@ curl -X 'POST' \
 
 ## Storage Management
 
-All images (input and output) are automatically synced to your MinIO instance, when using Chainlit. However while using FastAPI, you can control this behavior via `store_image` flag. This ensures that your local Docker container remains stateless and images are persisted safely.
+All images (input and output) are automatically synced to your SeaweedFS instance, when using Chainlit. However while using FastAPI, you can control this behavior via `store_image` flag. This ensures that your local Docker container remains stateless and images are persisted safely.
 
 ## 📈 Monitoring & Logging
 
 This project is integrated with Pydantic Logfire.
 
-1. Production Mode (DEV_MODE=false): All logs and traces are sent to your Logfire dashboard. You must provide a valid LOGFIRE_TOKEN in infisical.
+1. Production Mode (DEV_MODE=false): All logs and traces are sent to your Logfire dashboard. You must provide a valid LOGFIRE_TOKEN.
        Chainlit is run as background process and FastAPI is run as a PID 1 process.
 2. Development Mode (DEV_MODE=true): Logfire is disabled, and logs are output to the standard console for easier local debugging.
        Neither Chainlit or FastAPI is run by default. Its left upto the developer to chose which they want to run. Commands are available in enterypoint.sh. Or you can run them using tasks available in .vscode/tasks.json
@@ -220,9 +245,6 @@ A major architectural improvement in this wrapper is the decoupling of the Flore
 
 ### Checkout [All Florence Tasks Details @](chainlit.md)
 
-## High Level Architecture Diagram
-
-![High Level Architecture Diagram](./demo/High%20level%20Architecture%20Diagram.png)
 
 ## 🤖 GitHub Actions
 

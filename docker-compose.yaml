@@ -11,7 +11,6 @@ services:
     image: florence_ai
     networks:
       - florence-net
-      - infra-storage
     env_file: .env 
     environment:
       - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.0.0}
@@ -35,6 +34,76 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  
+  florence-redis:
+    build:
+      context: .
+      dockerfile_inline: FROM redis:7-alpine
+    image: ${FLORENCE_CACHE_SERVICE_NAME}
+    container_name: ${FLORENCE_CACHE_SERVICE_NAME}
+    networks:
+      - florence-net
+    volumes:
+      - florence_redis:/data
+    command: >
+      redis-server 
+      --appendonly yes 
+      --maxmemory 200mb 
+      --maxmemory-policy volatile-lru
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  
+  florence-postgres:
+    build:
+      context: .
+      dockerfile_inline: FROM postgres:15-alpine
+    image: ${FLORENCE_SQL_SERVICE_NAME}
+    container_name: ${FLORENCE_SQL_SERVICE_NAME}
+    networks:
+      - florence-net
+    env_file: .env
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - florence_db:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+  
+  florence-s3-seaweedfs:
+    build:
+      context: .
+      dockerfile_inline: FROM chrislusf/seaweedfs
+    image: ${FLORENCE_S3_SERVICE_NAME}
+    container_name: ${FLORENCE_S3_SERVICE_NAME}
+    networks:
+      - florence-net
+    ports:
+      - "${SEAWEEDFS_PORT}:8888"       # Filer UI / API
+      - "${SEAWEEDFS_BE_PORT}:8000"    # S3 API Endpoint
+      - "${SEAWEEDFS_MASTER_PORT}:9333" # Master Port
+    volumes:
+      - florence_seaweed_data:/data
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "weed mini -dir=/data -s3 -s3.port=8000 & 
+      sleep 5 && 
+      echo 'fs.configure -locationPrefix /buckets/florence-uploads/ -ttl 1d -apply' | weed shell -master=127.0.0.1:9333 -filer=127.0.0.1:8888 && 
+      wait"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
 networks: 
   florence-net:
@@ -42,11 +111,18 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/24  # Forces this specific safe range
-  infra-storage:
-    external: true
+        - subnet: 172.20.0.0/24
 
 volumes:
   florence_model:
     name: florence_model
+    driver: local
+  florence_redis:
+    name: florence_redis
+    driver: local
+  florence_db:
+    name: florence_db
+    driver: local
+  florence_seaweed_data:
+    name: florence_seaweed_data
     driver: local

@@ -13,3 +13,4 @@ Local Florence Installation.md
 
 # Ignore the local model folder during BUILD
 hf_cache/
+seaweed_data/

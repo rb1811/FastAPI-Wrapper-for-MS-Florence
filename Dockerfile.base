@@ -11,10 +11,6 @@ RUN apt-get update && apt-get install -y \
     libgl1 libglib2.0-0 gcc curl tar ca-certificates procps && \
     rm -rf /var/lib/apt/lists/*
 
-# 4. Install Infisical
-RUN curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash && \
-    apt-get update && apt-get install -y infisical && \
-    rm -rf /var/lib/apt/lists/*
 
 # 5. Conditional Torch Installation with surgical architecture purge
 RUN if [ "$DEVICE" = "rocm" ] ; then \

@@ -9,7 +9,7 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-r = redis.from_url(os.environ.get("REDIS_HOST", "redis://infra-redis:6379"))
+r = redis.from_url(os.environ.get("REDIS_HOST", "redis://florence-redis:6379"))
 MODEL_TIMEOUT = int(os.environ.get("MODEL_TIMEOUT", "30"))
 
 class RedisModelProxy:

@@ -41,6 +41,7 @@ async def predict(
         
         logger.info(f"API Prediction request received reqest_id={request_id}, task={task}, store_image={store_image}")
         
+        path_prefix = "fastapi"
         # 1. HANDLE INPUT IMAGE
         if store_image:
             # Match the keys expected by S3StorageClient.upload_file (**kwargs)
@@ -48,7 +49,8 @@ async def predict(
                 data=image_bytes,           # Use 'data', not 'file_bytes'
                 mime=file.content_type,     # Use 'mime', not 'mime_type'
                 object_key=file.filename,
-                threadId=request_id         
+                threadId=request_id,
+                path_prefix=path_prefix
             )
             # Get Presigned URL using the URL returned by the upload
             input_key = input_upload["url"].split(f"{storage_client.bucket}/")[-1]
@@ -65,7 +67,8 @@ async def predict(
             text_input=text_input, 
             image_bytes=image_bytes,
             return_path=store_image,
-            request_id=request_id
+            request_id=request_id,
+            path_prefix=path_prefix
         )
 
         logger.info("processing of image complete")

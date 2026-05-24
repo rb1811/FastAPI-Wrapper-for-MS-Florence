@@ -9,9 +9,6 @@ services:
         - DEV_MODE=${DEV_MODE:-false}
     container_name: florence_ai_cpu
     image: florence_ai:cpu
-    networks:
-      - florence-net
-      - infra-storage
     env_file: .env 
     environment:
       # CPU doesn't need HSA_OVERRIDE; lowered worker count for better stability
@@ -30,7 +27,74 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - florence-net
     # No devices or group_add here, allowing it to boot on standard RAM/CPU systems
+  
+  florence-redis:
+    build:
+      context: .
+      dockerfile_inline: FROM redis:7-alpine
+    image: ${FLORENCE_CACHE_SERVICE_NAME}
+    container_name: ${FLORENCE_CACHE_SERVICE_NAME}
+    networks:
+      - florence-net
+    volumes:
+      - florence_redis:/data
+    command: >
+      redis-server 
+      --appendonly yes 
+      --maxmemory 200mb 
+      --maxmemory-policy volatile-lru
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  
+  florence-postgres:
+    build:
+      context: .
+      dockerfile_inline: FROM postgres:15-alpine
+    image: ${FLORENCE_SQL_SERVICE_NAME}
+    container_name: ${FLORENCE_SQL_SERVICE_NAME}
+    networks:
+      - florence-net
+    env_file: .env
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - florence_db:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+  
+  florence-s3-seaweedfs:
+    build:
+      context: .
+      dockerfile_inline: FROM chrislusf/seaweedfs
+    image: ${FLORENCE_S3_SERVICE_NAME}
+    container_name: ${FLORENCE_S3_SERVICE_NAME}
+    networks:
+      - florence-net
+    ports:
+      - "${SEAWEEDFS_PORT}:8888" # Filer UI / API
+      - "8000:8000" # S3 API Endpoint mapped to internal mini port
+    volumes:
+      - florence_seaweed_data:/data
+    env_file: .env
+    # 'mini' spins up the full stack and builds the bucket directory structure automatically
+    command: 'mini -dir=/data -s3 -s3.port=8000'
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
 networks: 
   florence-net:
@@ -38,6 +102,18 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/24 
-  infra-storage:
-    external: true
+        - subnet: 172.20.0.0/24
+
+volumes:
+  florence_model:
+    name: florence_model
+    driver: local
+  florence_redis:
+    name: florence_redis
+    driver: local
+  florence_db:
+    name: florence_db
+    driver: local
+  florence_seaweed_data:
+    name: florence_seaweed_data
+    driver: local
